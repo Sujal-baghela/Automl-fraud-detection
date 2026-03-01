@@ -1,0 +1,72 @@
+{
+    "model_name": "RandomForestClassifier",
+    "model_version": "v5",
+    "training_date": "2026-03-01 12:04:50",
+    "dataset_shape": [
+        284807,
+        36
+    ],
+    "original_train_shape": [
+        227845,
+        35
+    ],
+    "resampled_train_shape": [
+        454902,
+        35
+    ],
+    "features": [
+        "Time",
+        "V1",
+        "V2",
+        "V3",
+        "V4",
+        "V5",
+        "V6",
+        "V7",
+        "V8",
+        "V9",
+        "V10",
+        "V11",
+        "V12",
+        "V13",
+        "V14",
+        "V15",
+        "V16",
+        "V17",
+        "V18",
+        "V19",
+        "V20",
+        "V21",
+        "V22",
+        "V23",
+        "V24",
+        "V25",
+        "V26",
+        "V27",
+        "V28",
+        "Amount",
+        "Hour",
+        "Night_txn",
+        "Amount_log",
+        "Amount_zscore",
+        "High_amount"
+    ],
+    "feature_engineering": [
+        "Hour",
+        "Night_txn",
+        "Amount_log",
+        "Amount_zscore",
+        "High_amount"
+    ],
+    "threshold": 0.20603015075376885,
+    "objective": "cost",
+    "cv_score": 0.9999927778963996,
+    "fraud_loss": 10000,
+    "false_alarm_cost": 200,
+    "imbalance_handling": {
+        "technique": "SMOTE",
+        "k_neighbors": 5,
+        "original_fraud_ratio": 0.001729,
+        "resampled_fraud_ratio": 0.5
+    }
+}
