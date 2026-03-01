@@ -17,7 +17,6 @@ Data/creditcard.csv
 models/best_model.pkl
 
 # Generated reports
-reports/
 
 # Logs
 logs/
