@@ -1,0 +1,41 @@
+version: "3.9"
+
+services:
+
+  # ── AutoML-X Fraud Detection API ──────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: automl-x-api
+
+    ports:
+      - "8000:8000"       # host:container — access at localhost:8000
+
+    volumes:
+      # Mount models folder so the trained model is accessible
+      # inside the container without rebuilding the image.
+      # Train on your machine → model auto-available in container.
+      - ./models:/app/models
+
+      # Mount reports so generated plots are saved to your machine
+      - ./reports:/app/reports
+
+      # Mount logs so you can read them outside the container
+      - ./logs:/app/logs
+
+    environment:
+      - PYTHONUNBUFFERED=1      # show logs in real time
+      - PYTHONDONTWRITEBYTECODE=1
+
+    restart: unless-stopped     # auto-restart on crash
+
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s         # give API time to load the model on startup
+      
