@@ -15,6 +15,12 @@ from xgboost import XGBClassifier
 logger = logging.getLogger(__name__)
 
 
+# ──────────────────────────────────────────────────────────────
+# NamedColumnTransformer
+# Always returns a named DataFrame instead of a numpy array.
+# Required for LightGBM and XGBoost to receive named feature
+# columns at every stage of the pipeline.
+# ──────────────────────────────────────────────────────────────
 class NamedColumnTransformer(ColumnTransformer):
 
     def transform(self, X):
@@ -31,77 +37,35 @@ class NamedColumnTransformer(ColumnTransformer):
 
 
 class AutoModelSelector:
-    """
-    Final production model selector.
 
-    Models competing:
-    - LogisticRegression  : fast baseline
-    - RandomForest        : was best in Run 1 (90.8% recall)
-                            now gets 35 features — may improve further
-    - LightGBM_Balanced   : best in Run 4 (0.97564 test AUC)
-    - LightGBM_HighRecall : LightGBM with native imbalance flag
-    - XGBoost_HighRecall  : XGBoost with stable gradient updates
-
-    Best model selected automatically by CV ROC-AUC.
-    """
-
+    # ──────────────────────────────────────────────────────────
+    # 5 competing models — all tuned for imbalanced fraud data
+    #
+    # scale_pos_weight = 284315/492 = 578 (exact class ratio)
+    # max_delta_step=1 — XGBoost official recommendation for
+    # imbalanced classification, stabilizes gradient updates
+    # ──────────────────────────────────────────────────────────
     MODELS = {
-        # ── Baseline ───────────────────────────────────────────
         "LogisticRegression": LogisticRegression(
-            max_iter=3000,
-            class_weight="balanced",
-            solver="liblinear"
+            max_iter=3000, class_weight="balanced"
         ),
-
-        # ── RandomForest — Run 1 winner ────────────────────────
-        # Upgraded from 200 to 500 trees.
-        # Now receives 35 features instead of 30.
-        # Feature engineering (Hour, Amount_zscore etc.) may
-        # give it the signal needed to catch the 9 hard frauds.
         "RandomForest": RandomForestClassifier(
-            n_estimators=500,
-            class_weight="balanced",
-            max_features="sqrt",
-            n_jobs=-1,
-            random_state=42
+            n_estimators=500, class_weight="balanced",
+            n_jobs=-1, random_state=42
         ),
-
-        # ── LightGBM variant 1 — Run 4 winner ─────────────────
-        # scale_pos_weight=578 = 284315/492 exact class ratio
         "LightGBM_Balanced": LGBMClassifier(
-            n_estimators=500,
-            scale_pos_weight=578,
-            learning_rate=0.05,
-            num_leaves=63,
-            random_state=42,
-            n_jobs=-1,
-            verbose=-1
+            n_estimators=500, scale_pos_weight=578,
+            random_state=42, n_jobs=-1, verbose=-1
         ),
-
-        # ── LightGBM variant 2 — internal imbalance flag ──────
         "LightGBM_HighRecall": LGBMClassifier(
-            n_estimators=500,
-            is_unbalance=True,
+            n_estimators=500, is_unbalance=True,
             min_child_samples=5,
-            num_leaves=63,
-            learning_rate=0.05,
-            random_state=42,
-            n_jobs=-1,
-            verbose=-1
+            random_state=42, n_jobs=-1, verbose=-1
         ),
-
-        # ── XGBoost — stable imbalanced gradient updates ──────
         "XGBoost_HighRecall": XGBClassifier(
-            n_estimators=300,
-            max_depth=6,
-            learning_rate=0.05,
-            scale_pos_weight=578,
-            min_child_weight=1,
-            max_delta_step=1,
-            random_state=42,
-            n_jobs=-1,
-            eval_metric="auc",
-            verbosity=0
+            n_estimators=300, scale_pos_weight=578,
+            max_delta_step=1, random_state=42,
+            n_jobs=-1, eval_metric="auc", verbosity=0
         ),
     }
 
@@ -109,7 +73,11 @@ class AutoModelSelector:
         self.best_model_name = None
         self.best_score      = None
         self.best_pipeline   = None
+        self.all_scores      = {}   # stores every model's CV score for MLflow
 
+    # ──────────────────────────────────────────────────────────
+    # Build preprocessor — auto-detects column types
+    # ──────────────────────────────────────────────────────────
     def _build_preprocessor(self, X):
         num_cols = X.select_dtypes(include=["int64", "float64"]).columns.tolist()
         cat_cols = X.select_dtypes(include=["object", "category", "bool"]).columns.tolist()
@@ -131,6 +99,10 @@ class AutoModelSelector:
             ("cat", cat_pipe, cat_cols),
         ])
 
+    # ──────────────────────────────────────────────────────────
+    # Train all models via CV, select best, refit on full
+    # training data, return (pipeline, score, name)
+    # ──────────────────────────────────────────────────────────
     def train_models(self, X_train, y_train):
         logger.info("Starting AutoML model selection...")
 
@@ -154,7 +126,10 @@ class AutoModelSelector:
                 cv=cv_folds, scoring="roc_auc", n_jobs=-1
             )))
 
-            logger.info(f"{name} ROC-AUC: {score:.5f}")
+            logger.info(f"{name} CV ROC-AUC: {score:.5f}")
+
+            # Store every score for MLflow logging
+            self.all_scores[name] = round(score, 5)
 
             if score > best_score:
                 best_score, best_pipeline, best_name = score, pipeline, name

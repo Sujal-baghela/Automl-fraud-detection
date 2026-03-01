@@ -8,6 +8,10 @@ from datetime import datetime
 from sklearn.model_selection import train_test_split
 from imblearn.over_sampling import SMOTE
 
+import mlflow
+import mlflow.sklearn
+
+# Add src folder to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from src.model_selector import AutoModelSelector
@@ -16,7 +20,6 @@ from src.data_loader import DataLoader
 from src.evaluation import generate_evaluation_reports
 from src.shap_explainer import IntelligentSHAP
 
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
@@ -24,51 +27,38 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# ================================================================
-# FEATURE ENGINEERING
-# ================================================================
-# Adds 5 derived features from Time and Amount.
-# V1-V28 are already PCA-transformed and cannot be engineered.
-#
-# Hour          — fraud rates vary by hour of day
-# Night_txn     — binary flag: transactions between 10pm-6am
-# Amount_log    — log(1+Amount) compresses right skew
-# Amount_zscore — how unusual this amount is (std deviations)
-# High_amount   — binary flag: Amount > $1,000
-#
-# Applied before train/val split so statistics are consistent.
-# ================================================================
+# ── Feature Engineering ────────────────────────────────────────
 def engineer_features(df):
-    df = df.copy()
-
-    seconds_in_day      = 3600 * 24
+    """Add 5 domain-aware features from Time and Amount."""
+    seconds_in_day = 3600 * 24
     df["Hour"]          = (df["Time"] % seconds_in_day) / 3600
     df["Night_txn"]     = ((df["Hour"] < 6) | (df["Hour"] > 22)).astype(int)
     df["Amount_log"]    = np.log1p(df["Amount"])
     df["Amount_zscore"] = (df["Amount"] - df["Amount"].mean()) / df["Amount"].std()
     df["High_amount"]   = (df["Amount"] > 1000).astype(int)
-
     return df
 
 
 def main():
     try:
+        # ── MLflow Setup ───────────────────────────────────────
+        # All runs go under one experiment called "fraud-detection"
+        # so you can compare them side by side in the UI.
+        mlflow.set_tracking_uri("mlruns")
+        mlflow.set_experiment("fraud-detection")
+
         logger.info("Starting training pipeline...")
 
-        # ---------- Load ----------
+        # ── Load Dataset ───────────────────────────────────────
         loader = DataLoader(file_path="Data/creditcard.csv")
         df     = loader.load_data()
         logger.info(f"Dataset shape: {df.shape}")
 
-        # ---------- Feature Engineering ----------
+        # ── Feature Engineering ────────────────────────────────
         logger.info("Applying feature engineering...")
         df = engineer_features(df)
-        logger.info(
-            f"Features after engineering: {df.shape[1] - 1} "
-            f"(+5 new: Hour, Night_txn, Amount_log, Amount_zscore, High_amount)"
-        )
+        logger.info(f"Shape after engineering: {df.shape}")
 
-        # ---------- Split ----------
         X, y = loader.split_features_target(df, target_column="Class")
 
         X_train, X_val, y_train, y_val = train_test_split(
@@ -76,16 +66,12 @@ def main():
         )
         logger.info(f"X_train: {X_train.shape} | X_val: {X_val.shape}")
 
-        # ---------- SMOTE ----------
-        # Standard SMOTE — produced best baseline in Run 1
-        # (90.8% recall, $108,400 cost).
-        # Now combined with 35 features — RandomForest gets
-        # 5 new signals it didn't have in Run 1.
-        logger.info("Applying SMOTE to training data...")
+        # ── SMOTE ──────────────────────────────────────────────
+        logger.info("Applying SMOTE...")
         logger.info(f"BEFORE:\n{pd.Series(y_train).value_counts().to_string()}")
 
-        smote = SMOTE(random_state=42, k_neighbors=5)
-        X_train_res, y_train_res = smote.fit_resample(X_train, y_train)
+        resampler = SMOTE(random_state=42)
+        X_train_res, y_train_res = resampler.fit_resample(X_train, y_train)
 
         X_train_res = pd.DataFrame(X_train_res, columns=X_train.columns)
         y_train_res = pd.Series(y_train_res, name=y_train.name)
@@ -93,70 +79,147 @@ def main():
         logger.info(f"AFTER:\n{pd.Series(y_train_res).value_counts().to_string()}")
         logger.info(f"Resampled shape: {X_train_res.shape}")
 
-        # ---------- Train ----------
-        selector = AutoModelSelector()
+        # ── Train inside MLflow run ────────────────────────────
+        with mlflow.start_run(run_name=f"automl-v5-{datetime.now().strftime('%H%M%S')}"):
 
-        detector = AutoMLFraudDetector(
-            model_selector=selector,
-            objective="cost",
-            fraud_loss=10000,
-            false_alarm_cost=200,
-            model_path="models/best_model.pkl",
-            model_version="v5"          # final version
-        )
+            # ── Log config params ──────────────────────────────
+            mlflow.log_params({
+                "dataset_rows":      len(df),
+                "features":          X_train.shape[1],
+                "imbalance_method":  "SMOTE",
+                "fraud_loss":        10000,
+                "false_alarm_cost":  200,
+                "model_version":     "v5",
+                "test_size":         0.2,
+                "random_state":      42,
+            })
 
-        detector.fit(X_train_res, y_train_res, X_val, y_val)
-        logger.info("Training and threshold optimization completed.")
+            # ── Train ──────────────────────────────────────────
+            selector = AutoModelSelector()
 
-        detector.evaluate(X_val, y_val)
+            detector = AutoMLFraudDetector(
+                model_selector=selector,
+                objective="cost",
+                fraud_loss=10000,
+                false_alarm_cost=200,
+                model_path="models/best_model.pkl",
+                model_version="v5"
+            )
 
-        # ---------- Reports ----------
-        best_pipeline = detector.get_model()
+            detector.fit(X_train_res, y_train_res, X_val, y_val)
+            logger.info("Training and threshold optimization completed.")
 
-        generate_evaluation_reports(
-            pipeline=best_pipeline,
-            X_test=X_val,
-            y_test=y_val,
-            threshold=detector.get_threshold()
-        )
+            # ── Evaluate ───────────────────────────────────────
+            detector.evaluate(X_val, y_val)
 
-        # ---------- SHAP ----------
-        logger.info("Generating SHAP explanation...")
-        IntelligentSHAP(best_pipeline).global_explanation(X_train)
-        logger.info("SHAP completed.")
+            # ── Log all model CV scores ────────────────────────
+            if hasattr(selector, "all_scores"):
+                for model_name, score in selector.all_scores.items():
+                    mlflow.log_metric(f"cv_roc_auc_{model_name}", score)
 
-        # ---------- Metadata ----------
-        os.makedirs("models", exist_ok=True)
+            # ── Log final metrics ──────────────────────────────
+            best_pipeline = detector.get_model()
+            threshold     = detector.get_threshold()
 
-        metadata = {
-            "model_name":            type(best_pipeline.named_steps["model"]).__name__,
-            "model_version":         detector.get_version(),
-            "training_date":         datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "dataset_shape":         list(df.shape),
-            "original_train_shape":  list(X_train.shape),
-            "resampled_train_shape": list(X_train_res.shape),
-            "features":              detector.get_feature_names(),
-            "feature_engineering": [
-                "Hour", "Night_txn",
-                "Amount_log", "Amount_zscore", "High_amount"
-            ],
-            "threshold":             detector.get_threshold(),
-            "objective":             detector.objective,
-            "cv_score":              detector.cv_score,
-            "fraud_loss":            10000,
-            "false_alarm_cost":      200,
-            "imbalance_handling": {
-                "technique":             "SMOTE",
-                "k_neighbors":           5,
-                "original_fraud_ratio":  round(float(y_train.sum()) / len(y_train), 6),
-                "resampled_fraud_ratio": round(float(y_train_res.sum()) / len(y_train_res), 6),
+            from sklearn.metrics import (
+                roc_auc_score, recall_score, precision_score,
+                f1_score, confusion_matrix
+            )
+
+            y_prob = best_pipeline.predict_proba(X_val)[:, 1]
+            y_pred = (y_prob >= threshold).astype(int)
+
+            tn, fp, fn, tp = confusion_matrix(y_val, y_pred).ravel()
+
+            missed_frauds = int(fn)
+            false_alarms  = int(fp)
+            business_cost = missed_frauds * 10000 + false_alarms * 200
+
+            mlflow.log_metrics({
+                "test_roc_auc":   round(roc_auc_score(y_val, y_prob), 5),
+                "cv_roc_auc":     round(detector.cv_score, 5),
+                "recall":         round(recall_score(y_val, y_pred), 5),
+                "precision":      round(precision_score(y_val, y_pred), 5),
+                "f1_score":       round(f1_score(y_val, y_pred), 5),
+                "threshold":      round(threshold, 5),
+                "missed_frauds":  missed_frauds,
+                "false_alarms":   false_alarms,
+                "business_cost":  business_cost,
+                "true_positives": int(tp),
+                "true_negatives": int(tn),
+            })
+
+            # ── Tag the run ────────────────────────────────────
+            mlflow.set_tags({
+                "best_model":           selector.best_model_name,
+                "feature_count":        str(X_train.shape[1]),
+                "smote_applied":        "True",
+                "feature_engineering":  "True",
+            })
+
+            logger.info(f"MLflow metrics logged — Cost: ${business_cost:,} | Recall: {recall_score(y_val, y_pred):.3f}")
+
+            # ── Reports ────────────────────────────────────────
+            generate_evaluation_reports(
+                pipeline=best_pipeline,
+                X_test=X_val,
+                y_test=y_val,
+                threshold=threshold
+            )
+
+            # Log plots as MLflow artifacts
+            for path, folder in [
+                ("reports/evaluation/roc_curve.png",       "plots"),
+                ("reports/evaluation/confusion_matrix.png","plots"),
+                ("reports/shap/feature_importance_bar.png","plots"),
+                ("reports/shap/global_summary.png",        "plots"),
+            ]:
+                if os.path.exists(path):
+                    mlflow.log_artifact(path, folder)
+
+            # ── SHAP ───────────────────────────────────────────
+            logger.info("Generating SHAP explanation...")
+            IntelligentSHAP(best_pipeline).global_explanation(X_train)
+            logger.info("SHAP completed.")
+
+            # ── Log model ──────────────────────────────────────
+            mlflow.sklearn.log_model(
+                best_pipeline,
+                artifact_path="model",
+                registered_model_name="automl-fraud-detector"
+            )
+
+            # ── Metadata ───────────────────────────────────────
+            os.makedirs("models", exist_ok=True)
+
+            metadata = {
+                "model_name":            type(best_pipeline.named_steps["model"]).__name__,
+                "model_version":         detector.get_version(),
+                "training_date":         datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "dataset_shape":         list(df.shape),
+                "original_train_shape":  list(X_train.shape),
+                "resampled_train_shape": list(X_train_res.shape),
+                "features":              detector.get_feature_names(),
+                "threshold":             threshold,
+                "objective":             detector.objective,
+                "cv_score":              detector.cv_score,
+                "business_cost":         business_cost,
+                "missed_frauds":         missed_frauds,
+                "false_alarms":          false_alarms,
+                "imbalance_handling": {
+                    "technique":             "SMOTE",
+                    "original_fraud_ratio":  round(float(y_train.sum()) / len(y_train), 6),
+                    "resampled_fraud_ratio": round(float(y_train_res.sum()) / len(y_train_res), 6),
+                }
             }
-        }
 
-        with open("models/metadata_v1.json", "w") as f:
-            json.dump(metadata, f, indent=4)
+            with open("models/metadata_v1.json", "w") as f:
+                json.dump(metadata, f, indent=4)
 
-        logger.info("Metadata saved. Pipeline completed successfully.")
+            mlflow.log_artifact("models/metadata_v1.json", "metadata")
+
+            logger.info("Metadata saved. Pipeline completed successfully.")
+            logger.info("MLflow run complete. View UI: mlflow ui --port 5000")
 
     except Exception as e:
         logger.exception("Training failed.")
