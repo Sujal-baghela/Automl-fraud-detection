@@ -1,9 +1,4 @@
-# 🛡️ AutoML-X — Intelligent Fraud Detection System
-
-<p align="center">
-  <img src="reports/shap/feature_importance_bar.png" width="700" alt="SHAP Feature Importance"/>
-</p>
-
+🛡️ AutoML-X — Intelligent Fraud Detection System
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.10-blue?style=flat-square&logo=python"/>
   <img src="https://img.shields.io/badge/FastAPI-0.129.0-009688?style=flat-square&logo=fastapi"/>
@@ -14,33 +9,14 @@
   <img src="https://img.shields.io/badge/License-MIT-yellow?style=flat-square"/>
 </p>
 
----
+📌 Overview
+AutoML-X is a production-ready, end-to-end machine learning system for credit card fraud detection. It automatically trains, evaluates, and selects the best model from 5 competing algorithms using cross-validation, applies feature engineering on raw transaction data, optimizes the decision threshold based on real business costs, and serves predictions through a FastAPI REST API with full SHAP explainability.
+Built as a Minor Project at Madhav Institute of Technology and Science.
 
-## 📌 Overview
+🎯 Key Results
+MetricValue🏆 Best ModelRandom Forest📈 CV ROC-AUC0.99999📊 Test ROC-AUC0.97482🎯 Frauds Caught88 / 98 (89.8% Recall)💰 Minimum Business Cost$113,800⚡ Optimal Threshold0.20603 (cost-optimized)🔢 Total Features35 (30 original + 5 engineered)🔁 Imbalance HandlingSMOTE (50/50 balanced)
 
-**AutoML-X** is a production-ready, end-to-end machine learning system for credit card fraud detection. It automatically trains, evaluates, and selects the best model from 5 competing algorithms using cross-validation, applies feature engineering on raw transaction data, optimizes the decision threshold based on real business costs, and serves predictions through a FastAPI REST API with full SHAP explainability.
-
-Built as a **Minor Project** at **Madhav Institute of Technology and Science**.
-
----
-
-## 🎯 Key Results
-
-| Metric | Value |
-|--------|-------|
-| 🏆 Best Model | Random Forest |
-| 📈 CV ROC-AUC | **0.99999** |
-| 📊 Test ROC-AUC | **0.97482** |
-| 🎯 Frauds Caught | **88 / 98 (89.8% Recall)** |
-| 💰 Minimum Business Cost | **$113,800** |
-| ⚡ Optimal Threshold | **0.20603** (cost-optimized) |
-| 🔢 Total Features | **35** (30 original + 5 engineered) |
-| 🔁 Imbalance Handling | SMOTE (50/50 balanced) |
-
----
-
-## 📊 Evaluation Reports
-
+📊 Evaluation Reports
 <table>
   <tr>
     <td><img src="reports/evaluation/roc_curve.png" width="400" alt="ROC Curve"/></td>
@@ -52,10 +28,7 @@ Built as a **Minor Project** at **Madhav Institute of Technology and Science**.
   </tr>
 </table>
 
----
-
-## 🔍 SHAP Explainability
-
+🔍 SHAP Explainability
 <table>
   <tr>
     <td><img src="reports/shap/feature_importance_bar.png" width="400" alt="SHAP Bar"/></td>
@@ -66,14 +39,9 @@ Built as a **Minor Project** at **Madhav Institute of Technology and Science**.
     <td align="center"><b>Feature Impact Direction (Beeswarm)</b></td>
   </tr>
 </table>
+Top fraud indicators: V14, V4, V12, V10, V3 — consistent with published research on this dataset.
 
-**Top fraud indicators:** `V14`, `V4`, `V12`, `V10`, `V3` — consistent with published research on this dataset.
-
----
-
-## 🏗️ System Architecture
-
-```
+🏗️ System Architecture
 creditcard.csv
       │
       ▼
@@ -104,64 +72,28 @@ creditcard.csv
       ▼
  best_model.pkl ──► FastAPI ──► /predict
                           └──► SHAP explanation per transaction
-```
 
----
-
-## 🧪 Experimentation Journey
-
+🧪 Experimentation Journey
 5 systematic experiments were run to optimize recall and business cost:
+RunTechniqueModelRecallCostOutcome1SMOTERandomForest (30 features)90.8%$108,400Strong baseline2BorderlineSMOTELightGBM84.7%$151,800Lower recall3SMOTETomekLightGBM variants84.7%$157,200No improvement4SMOTE + Feature Eng.LightGBM_Balanced88.8%$118,800Best Test AUC5SMOTE + Feature Eng.RandomForest (35 features)89.8%$113,800✅ Final
+Feature engineering caught 4 additional borderline frauds that the model previously missed — proving domain-aware feature extraction adds measurable value beyond hyperparameter tuning alone.
 
-| Run | Technique | Model | Recall | Cost | Outcome |
-|-----|-----------|-------|--------|------|---------|
-| 1 | SMOTE | RandomForest (30 features) | 90.8% | $108,400 | Strong baseline |
-| 2 | BorderlineSMOTE | LightGBM | 84.7% | $151,800 | Lower recall |
-| 3 | SMOTETomek | LightGBM variants | 84.7% | $157,200 | No improvement |
-| 4 | SMOTE + Feature Eng. | LightGBM_Balanced | 88.8% | $118,800 | Best Test AUC |
-| **5** | **SMOTE + Feature Eng.** | **RandomForest (35 features)** | **89.8%** | **$113,800** | **✅ Final** |
+🔧 Feature Engineering
+The raw dataset has V1–V28 (PCA-anonymized) plus Time and Amount (original). Five new features were derived from the original fields:
+FeatureDescriptionWhy It HelpsHourHour of day (0–23)Fraud patterns vary by time — late night has higher ratesNight_txn1 if between 10pm–6amDirect binary signal for suspicious hoursAmount_loglog(1 + Amount)Compresses right skew so model treats amounts fairlyAmount_zscoreStandard deviations from meanFlags unusually large or small transactionsHigh_amount1 if Amount > $1,000Direct signal for high-value transactions
 
-Feature engineering caught **4 additional borderline frauds** that the model previously missed — proving domain-aware feature extraction adds measurable value beyond hyperparameter tuning alone.
-
----
-
-## 🔧 Feature Engineering
-
-The raw dataset has `V1–V28` (PCA-anonymized) plus `Time` and `Amount` (original). Five new features were derived from the original fields:
-
-| Feature | Description | Why It Helps |
-|---------|-------------|--------------|
-| `Hour` | Hour of day (0–23) | Fraud patterns vary by time — late night has higher rates |
-| `Night_txn` | 1 if between 10pm–6am | Direct binary signal for suspicious hours |
-| `Amount_log` | log(1 + Amount) | Compresses right skew so model treats amounts fairly |
-| `Amount_zscore` | Standard deviations from mean | Flags unusually large or small transactions |
-| `High_amount` | 1 if Amount > $1,000 | Direct signal for high-value transactions |
-
----
-
-## 💰 Business Cost Optimization
-
-Instead of the default 0.5 threshold, `BusinessCostOptimizer` searches 200 threshold values to minimize:
-
-```
+💰 Business Cost Optimization
+Instead of the default 0.5 threshold, BusinessCostOptimizer searches 200 threshold values to minimize:
 Total Cost = (Missed Frauds × $10,000) + (False Alarms × $200)
-```
-
-Missing a fraud costs **50× more** than a false alarm. The optimizer reflects this — accepting more false alarms to catch more real fraud.
-
-```
+Missing a fraud costs 50× more than a false alarm. The optimizer reflects this — accepting more false alarms to catch more real fraud.
 Final result at threshold 0.20603:
   88 frauds caught
   10 frauds missed  × $10,000 = $100,000
   69 false alarms   × $200    =  $13,800
   ──────────────────────────────────────
   Total minimum cost: $113,800
-```
 
----
-
-## 📂 Project Structure
-
-```
+📂 Project Structure
 automl-x/
 │
 ├── app/
@@ -195,69 +127,35 @@ automl-x/
 ├── requirements.txt
 ├── .gitignore
 └── README.md
-```
 
----
-
-## 🚀 Quick Start
-
-### 1. Clone the repository
-```bash
-git clone https://github.com/Sujal-baghela/Automl-fraud-detection.git
+🚀 Quick Start
+1. Clone the repository
+bashgit clone https://github.com/Sujal-baghela/Automl-fraud-detection.git
 cd Automl-fraud-detection
-```
-
-### 2. Create virtual environment
-```bash
-python -m venv venv
+2. Create virtual environment
+bashpython -m venv venv
 
 # Windows
 venv\Scripts\activate
 
 # Mac/Linux
 source venv/bin/activate
-```
-
-### 3. Install dependencies
-```bash
-pip install -r requirements.txt
-```
-
-### 4. Download the dataset
-Download `creditcard.csv` from [Kaggle](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud) and place it at:
-```
+3. Install dependencies
+bashpip install -r requirements.txt
+4. Download the dataset
+Download creditcard.csv from Kaggle and place it at:
 Data/creditcard.csv
-```
-
-### 5. Train the model
-```bash
-python -m Scripts.train
-```
-
-### 6. Start the API
-```bash
-uvicorn app.api:app --reload --port 8000
-```
-
-### 7. Open Swagger UI
-```
+5. Train the model
+bashpython -m Scripts.train
+6. Start the API
+bashuvicorn app.api:app --reload --port 8000
+7. Open Swagger UI
 http://127.0.0.1:8000/docs
-```
 
----
-
-## 🌐 API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/` | Health check + model info |
-| `GET` | `/model-info` | Full model metadata |
-| `POST` | `/predict` | Single transaction prediction |
-| `POST` | `/predict/batch` | Batch prediction |
-
-### Sample Request
-```bash
-curl -X POST "http://127.0.0.1:8000/predict" \
+🌐 API Endpoints
+MethodEndpointDescriptionGET/Health check + model infoGET/model-infoFull model metadataPOST/predictSingle transaction predictionPOST/predict/batchBatch prediction
+Sample Request
+bashcurl -X POST "http://127.0.0.1:8000/predict" \
   -H "Content-Type: application/json" \
   -d '{
     "Time": 406.0, "Amount": 149.62,
@@ -272,11 +170,8 @@ curl -X POST "http://127.0.0.1:8000/predict" \
     "V25": 0.12, "V26": -0.18, "V27": 0.13,
     "V28": -0.02
   }'
-```
-
-### Sample Response
-```json
-{
+Sample Response
+json{
   "prediction_result": {
     "fraud_probability_percent": 23.4,
     "threshold_used": 0.20603,
@@ -295,42 +190,25 @@ curl -X POST "http://127.0.0.1:8000/predict" \
     ]
   }
 }
-```
 
----
+📦 Tech Stack
+CategoryLibraryML Modelsscikit-learn, LightGBM, XGBoostImbalanceimbalanced-learn (SMOTE)ExplainabilitySHAPAPIFastAPI, UvicornDataPandas, NumPyVisualizationMatplotlib, SeabornSerializationJoblib
 
-## 📦 Tech Stack
+📋 Dataset
+Credit Card Fraud Detection — European cardholders, September 2013.
 
-| Category | Library |
-|----------|---------|
-| ML Models | scikit-learn, LightGBM, XGBoost |
-| Imbalance | imbalanced-learn (SMOTE) |
-| Explainability | SHAP |
-| API | FastAPI, Uvicorn |
-| Data | Pandas, NumPy |
-| Visualization | Matplotlib, Seaborn |
-| Serialization | Joblib |
+284,807 transactions over 2 days
+492 frauds (0.17% — highly imbalanced)
+Features V1–V28 are PCA-transformed (anonymized)
+Features Time and Amount are original
+Binary target: 0 = Legitimate, 1 = Fraud
 
----
+Source: Kaggle — ULB Machine Learning Group
 
-## 📋 Dataset
+⚠️ Dataset not included due to size and licensing. Download from Kaggle and place at Data/creditcard.csv.
 
-**Credit Card Fraud Detection** — European cardholders, September 2013.
 
-- 284,807 transactions over 2 days
-- 492 frauds (0.17% — highly imbalanced)
-- Features V1–V28 are PCA-transformed (anonymized)
-- Features `Time` and `Amount` are original
-- Binary target: `0` = Legitimate, `1` = Fraud
-
-Source: [Kaggle — ULB Machine Learning Group](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud)
-
-> ⚠️ Dataset not included due to size and licensing. Download from Kaggle and place at `Data/creditcard.csv`.
-
----
-
-## 👥 Authors
-
+👥 Authors
 <table>
   <tr>
     <td align="center">
@@ -343,11 +221,7 @@ Source: [Kaggle — ULB Machine Learning Group](https://www.kaggle.com/datasets/
     </td>
   </tr>
 </table>
+Institution: Madhav Institute of Technology and Science
 
-**Institution:** Madhav Institute of Technology and Science
-
----
-
-## 📄 License
-
+📄 License
 This project is licensed under the MIT License.
