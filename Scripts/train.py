@@ -19,6 +19,7 @@ from src.fraud_system import AutoMLFraudDetector
 from src.data_loader import DataLoader
 from src.evaluation import generate_evaluation_reports
 from src.shap_explainer import IntelligentSHAP
+from src.drift_detector import DriftDetector
 
 logging.basicConfig(
     level=logging.INFO,
@@ -188,6 +189,23 @@ def main():
                 artifact_path="model",
                 registered_model_name="automl-fraud-detector"
             )
+
+            # ── Drift Detector ─────────────────────────────────
+            logger.info("Fitting drift detector on training data...")
+            drift_detector = DriftDetector(psi_threshold=0.2, ks_alpha=0.05)
+            drift_detector.fit(X_train)
+            drift_detector.save("models/drift_reference.json")
+
+            # Run a quick self-check on validation data
+            drift_report = drift_detector.detect(X_val)
+            drift_detector.print_report(drift_report)
+
+            mlflow.log_metrics({
+                "drift_ratio":       drift_report["drift_ratio"],
+                "drifted_features":  drift_report["drifted_count"],
+            })
+            mlflow.log_artifact("models/drift_reference.json", "drift")
+            logger.info("Drift detector ready.")
 
             # ── Metadata ───────────────────────────────────────
             os.makedirs("models", exist_ok=True)
