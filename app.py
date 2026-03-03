@@ -123,10 +123,12 @@ with st.sidebar:
         st.markdown(f"**Features:** {len(meta['features'])}")
         st.markdown(f"**Trained:** {meta['training_date'][:10]}")
         st.divider()
-        st.markdown(f"**Test ROC-AUC:** 0.97482")
-        st.markdown(f"**Recall:** 89.8%")
-        st.markdown(f"**Business Cost:** $113,800")
-    except:
+        st.markdown("**Test ROC-AUC:** 0.97482")
+        st.markdown("**Recall:** 89.8%")
+        st.markdown("**Business Cost:** $113,800")
+        # Fix bare except:
+    except Exception:
+   
         st.warning("Model metadata not found.")
 
     st.divider()
