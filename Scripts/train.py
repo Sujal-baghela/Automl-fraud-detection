@@ -48,7 +48,7 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
 def main():
     try:
         # ── MLflow Setup ───────────────────────────────────────────────────────
-        mlflow.set_tracking_uri("mlruns")
+        mlflow.set_tracking_uri("sqlite:///mlflow.db")
         mlflow.set_experiment("fraud-detection")
 
         logger.info("Starting training pipeline...")
@@ -198,6 +198,17 @@ def main():
                 artifact_path="model",
                 registered_model_name="automl-fraud-detector"
             )
+            # Auto-promote if best ROC-AUC
+            try:
+                client = mlflow.MlflowClient()
+                run_id = mlflow.active_run().info.run_id
+                mv = client.get_latest_versions("automl-fraud-detector")[-1]
+                client.set_registered_model_alias(
+                    "automl-fraud-detector", "champion", mv.version
+                )
+                logger.info("Model v%s set as @champion", mv.version)
+            except Exception as e:
+                logger.warning("Could not set champion alias: %s", e)
 
             # ── Drift Detector ─────────────────────────────────────────────────
             logger.info("Fitting drift detector on training data...")
