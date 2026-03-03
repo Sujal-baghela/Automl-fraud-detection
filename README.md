@@ -1,12 +1,15 @@
 # 🛡️ AutoML-X — Intelligent Fraud Detection System
 
-![Python](https://img.shields.io/badge/Python-3.10-blue?style=flat-square&logo=python)
+![Python](https://img.shields.io/badge/Python-3.11-blue?style=flat-square&logo=python)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.129.0-009688?style=flat-square&logo=fastapi)
 ![RandomForest](https://img.shields.io/badge/RandomForest-AutoML-brightgreen?style=flat-square)
 ![SHAP](https://img.shields.io/badge/SHAP-0.50.0-orange?style=flat-square)
 ![SMOTE](https://img.shields.io/badge/SMOTE-Imbalanced--Learn-red?style=flat-square)
 ![XGBoost](https://img.shields.io/badge/XGBoost-Competing-blue?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)
+[![CI](https://github.com/Sujal-baghela/Automl-fraud-detection/actions/workflows/ci.yml/badge.svg)](https://github.com/Sujal-baghela/Automl-fraud-detection/actions/workflows/ci.yml)
+![Tests](https://img.shields.io/badge/Tests-53%20passing-brightgreen?style=flat-square)
+![Coverage](https://img.shields.io/badge/Coverage-58%25-yellow?style=flat-square)
 
 ---
 
@@ -30,6 +33,8 @@ Built as a **Minor Project** at **Madhav Institute of Technology and Science**.
 | ⚡ Optimal Threshold | **0.20603** (cost-optimized) |
 | 🔢 Total Features | **35** (30 original + 5 engineered) |
 | 🔁 Imbalance Handling | SMOTE (50/50 balanced) |
+| 🧪 Test Suite | **53 tests passing** across 10 classes |
+| 📋 CI/CD | GitHub Actions — lint + test on every push |
 
 ---
 
@@ -68,6 +73,9 @@ creditcard.csv
  DataLoader ──► imbalance detection (0.17% fraud rate)
       │
       ▼
+ DataCleaner ──► remove duplicates, impute missing, log outliers
+      │
+      ▼
  Feature Engineering (+5 derived features)
       ├── Hour          (fraud varies by time of day)
       ├── Night_txn     (10pm–6am binary flag)
@@ -79,7 +87,7 @@ creditcard.csv
  SMOTE Oversampling ──► balanced training set (50/50)
       │
       ▼
- AutoModelSelector — 5 models compete
+ AutoModelSelector — 5 models compete via cross-validation
       ├── LogisticRegression    (ROC-AUC: 0.99812)
       ├── RandomForest          (ROC-AUC: 0.99999) ✅ selected
       ├── LightGBM_Balanced     (ROC-AUC: 0.99998)
@@ -91,7 +99,13 @@ creditcard.csv
       │                    cost = $113,800
       ▼
  best_model.pkl ──► FastAPI ──► /predict
-                          └──► SHAP explanation per transaction
+      │                   └──► /predict/batch
+      │                   └──► SHAP explanation per transaction
+      ▼
+ DriftDetector ──► PSI + KS test on new data
+      │
+      ▼
+ MLflow ──► experiment tracking + model registry
 ```
 
 ---
@@ -128,7 +142,7 @@ The raw dataset has `V1–V28` (PCA-anonymized) plus `Time` and `Amount` (origin
 
 ## 💰 Business Cost Optimization
 
-Instead of the default 0.5 threshold, `BusinessCostOptimizer` searches 200 threshold values to minimize:
+Instead of the default 0.5 threshold, `BusinessCostOptimizer` searches threshold values using actual predicted probabilities to minimize:
 
 ```
 Total Cost = (Missed Frauds × $10,000) + (False Alarms × $200)
@@ -146,40 +160,105 @@ Final result at threshold 0.20603:
 
 ---
 
+## 🧪 Test Suite
+
+53 unit tests across 10 test classes — all passing in CI:
+
+| Test Class | Tests | What It Covers |
+|---|---|---|
+| `TestFeatureEngineering` | 7 | Hour range, binary flags, no nulls, immutability |
+| `TestDataLoader` | 6 | Load, split, missing target, metadata |
+| `TestDataCleaner` | 6 | Duplicates, imputation, outlier detection |
+| `TestDriftDetector` | 8 | Fit, detect, save/load, threshold preservation |
+| `TestThresholdOptimizer` | 5 | All 3 strategies, invalid strategy, recall check |
+| `TestBusinessCostOptimizer` | 5 | Cost minimization, asymmetric loss behavior |
+| `TestAutoModelSelector` | 4 | Pipeline structure, CV scores, predict_proba |
+| `TestAutoMLFraudDetector` | 8 | Fit, predict, save/load, version, None guard |
+| `TestGenerateEvaluationReports` | 3 | ROC-AUC, file outputs, return keys |
+| `TestSavedArtifacts` | 3 | Model package keys, metadata (skip if no model) |
+
+**🟢 Run locally:**
+
+```bash
+pytest tests/ -v --tb=short
+```
+
+---
+
+## 🔁 CI/CD Pipeline
+
+Every push to `main` triggers two jobs automatically:
+
+```
+Push to main
+      │
+      ▼
+ ┌─── Lint (ruff) ───────────────────────────────┐
+ │  Checks code style across all .py files       │
+ │  Fails fast on syntax/style errors            │
+ └───────────────────────────────────────────────┘
+      │ (only runs if lint passes)
+      ▼
+ ┌─── Test (pytest) ──────────────────────────────┐
+ │  Runs 53 unit tests with coverage             │
+ │  Uploads coverage.xml as artifact             │
+ │  Uses pip caching for fast runs (~1m 30s)     │
+ └────────────────────────────────────────────────┘
+```
+
+---
+
 ## 📂 Project Structure
 
 ```
 automl-x/
 │
+├── .github/
+│   └── workflows/
+│       └── ci.yml              # GitHub Actions — lint + test pipeline
+│
 ├── app/
-│   └── api.py                  # FastAPI REST API
+│   └── api.py                  # FastAPI REST API (single + batch prediction)
 │
 ├── Scripts/
+│   ├── __init__.py
 │   └── train.py                # Training entry point + feature engineering
 │
 ├── src/
-│   ├── model_selector.py       # AutoML — 5 models compete
-│   ├── fraud_system.py         # Main orchestrator
+│   ├── model_selector.py       # AutoML — 5 models compete via CV
+│   ├── fraud_system.py         # Main orchestrator (fit, predict, save, load)
 │   ├── cost_optimizer.py       # Business cost threshold optimization
-│   ├── threshold_optimizer.py  # Metric-based threshold optimization
+│   ├── threshold_optimizer.py  # Metric-based threshold (F1, recall, precision)
 │   ├── shap_explainer.py       # SHAP explainability (SHAP 0.50.0 compatible)
 │   ├── inference_engine.py     # Production inference engine
-│   ├── evaluation.py           # Evaluation report generation
+│   ├── evaluation.py           # ROC curve, confusion matrix, report generation
+│   ├── drift_detector.py       # PSI + KS test data drift detection
 │   ├── data_loader.py          # Dataset loading and validation
 │   └── cleaner.py              # Data cleaning utilities
 │
+├── tests/
+│   ├── __init__.py
+│   ├── conftest.py             # Shared pytest path configuration
+│   └── test_pipeline.py        # 53 unit tests across 10 classes
+│
 ├── models/
+│   ├── best_model.pkl          # Trained model package (gitignored)
+│   ├── drift_reference.json    # Drift detector reference statistics
 │   └── metadata_v1.json        # Model metadata and training config
 │
 ├── reports/
-│   ├── evaluation/             # ROC curve, confusion matrix, report
+│   ├── evaluation/             # ROC curve, confusion matrix, classification report
 │   └── shap/                   # SHAP beeswarm and bar plots
 │
 ├── Data/
 │   └── .gitkeep                # Placeholder — add creditcard.csv here
 │
-├── requirements.txt
+├── .gitattributes              # Normalize line endings across OS
 ├── .gitignore
+├── .dockerignore
+├── Dockerfile
+├── docker-compose.yml
+├── requirements.txt
 └── README.md
 ```
 
@@ -234,6 +313,12 @@ uvicorn app.api:app --reload --port 8000
 http://127.0.0.1:8000/docs
 ```
 
+**8. View MLflow experiments**
+
+```bash
+mlflow ui --port 5000
+```
+
 ---
 
 ## 🌐 API Endpoints
@@ -241,9 +326,9 @@ http://127.0.0.1:8000/docs
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/` | Health check + model info |
-| `GET` | `/model-info` | Full model metadata |
-| `POST` | `/predict` | Single transaction prediction |
-| `POST` | `/predict/batch` | Batch prediction |
+| `GET` | `/model-info` | Full model metadata + feature list |
+| `POST` | `/predict` | Single transaction prediction + SHAP |
+| `POST` | `/predict/batch` | Batch prediction for multiple transactions |
 
 **Sample Request**
 
@@ -269,6 +354,11 @@ curl -X POST "http://127.0.0.1:8000/predict" \
 
 ```json
 {
+  "model_info": {
+    "version": "v5",
+    "objective": "cost",
+    "cv_score": 0.99999
+  },
   "prediction_result": {
     "fraud_probability_percent": 23.4,
     "threshold_used": 0.20603,
@@ -291,17 +381,32 @@ curl -X POST "http://127.0.0.1:8000/predict" \
 
 ---
 
+## 🐳 Docker
+
+```bash
+# Build and run with Docker Compose
+docker-compose up --build
+
+# API will be available at http://localhost:8000
+```
+
+---
+
 ## 📦 Tech Stack
 
 | Category | Library |
 |----------|---------|
 | ML Models | scikit-learn, LightGBM, XGBoost |
 | Imbalance | imbalanced-learn (SMOTE) |
-| Explainability | SHAP |
+| Explainability | SHAP 0.50.0 |
 | API | FastAPI, Uvicorn |
-| Data | Pandas, NumPy |
+| Experiment Tracking | MLflow |
+| Data | Pandas, NumPy, SciPy |
 | Visualization | Matplotlib, Seaborn |
 | Serialization | Joblib |
+| Testing | pytest, pytest-cov |
+| Linting | Ruff |
+| CI/CD | GitHub Actions |
 
 ---
 
