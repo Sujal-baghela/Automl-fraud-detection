@@ -28,6 +28,8 @@ class DriftDetector:
         return self
 
     def _psi(self, ref, cur, bins=10):
+        if np.std(ref) == 0:
+          return 0.0
         bp      = np.linspace(np.percentile(ref, 1), np.percentile(ref, 99), bins + 1)
         r, _    = np.histogram(ref, bins=bp)
         c, _    = np.histogram(cur, bins=bp)

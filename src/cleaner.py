@@ -20,6 +20,7 @@ class DataCleaner:
         return missing
 
     def impute_missing(self, df):
+        df = df.copy()
         for col in df.columns:
             if df[col].isnull().sum() > 0:
 
@@ -45,6 +46,7 @@ class DataCleaner:
         return df
 
     def detect_outliers_iqr(self, df):
+        df = df.copy()
         numerical_cols = df.select_dtypes(include=['int64', 'float64']).columns
 
         for col in numerical_cols:

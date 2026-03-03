@@ -1,36 +1,27 @@
-@"
-# Python
+
 __pycache__/
 *.py[cod]
 *.pyo
-.Python
+.pytest_cache/
+*.egg-info/
 
 # Virtual environment
 venv/
-.venv/
 env/
+.env
 
-# Dataset (too large + licensing)
+# Large model files
+models/best_model.pkl
+mlflow.db
+mlruns/
+
+# Data (too large for GitHub)
 Data/creditcard.csv
 
-# Trained model (binary, large)
-models/best_model.pkl
-
-# Generated reports
-
-# Logs
+# Logs & reports (generated, not source)
 logs/
 *.log
-
-# IDE
-.vscode/
-.idea/
 
 # OS
 .DS_Store
 Thumbs.db
-
-# Jupyter
-.ipynb_checkpoints/
-*.ipynb
-"@ | Out-File -FilePath ".gitignore" -Encoding utf8
