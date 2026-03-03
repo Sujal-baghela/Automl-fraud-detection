@@ -23,7 +23,7 @@ class BusinessCostOptimizer:
 
         Total Cost = (FN * fraud_loss) + (FP * false_alarm_cost)
         """
-        thresholds = np.linspace(0.0, 1.0, 200)
+        thresholds = np.unique(np.concatenate([[0.0], np.sort(y_proba), [1.0]]))
 
         for threshold in thresholds:
             y_pred = (y_proba >= threshold).astype(int)

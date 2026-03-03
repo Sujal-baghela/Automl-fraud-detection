@@ -128,6 +128,8 @@ class AutoMLFraudDetector:
 
         if self.best_model is None:
             raise ValueError("Model not trained or loaded.")
+        if self.cv_score is None:                         
+            raise ValueError("cv_score is None. Was fit() called?")
 
         y_proba = self.predict_proba(X_test)
         y_pred = self.predict(X_test)
