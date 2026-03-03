@@ -25,3 +25,8 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+explanations/
+model_reports/
+reports/
+mlruns/
+*.db
