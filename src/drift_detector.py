@@ -95,7 +95,8 @@ class DriftDetector:
         print("="*55 + "\n")
 
     def save(self, path="models/drift_reference.json"):
-        import os; os.makedirs(os.path.dirname(path), exist_ok=True)
+        import os
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w") as f:
             json.dump({"reference": self.reference,
                        "psi_threshold": self.psi_threshold,
