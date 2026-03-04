@@ -21,11 +21,15 @@ COPY . .
 
 # ── Create required directories & permissions ─────────────────
 RUN mkdir -p models logs \
-    && chown -R appuser:appuser /app \
-    && chmod +x start.sh
+    && chown -R appuser:appuser /app
 
 USER appuser
 
-EXPOSE 7860 8501
+EXPOSE 7860
 
-CMD ["bash", "start.sh"]
+# ── Run Streamlit on port 7860 (HF Spaces default) ───────────
+CMD ["streamlit", "run", "app_dashboard.py", \
+     "--server.port=7860", \
+     "--server.address=0.0.0.0", \
+     "--server.headless=true", \
+     "--browser.gatherUsageStats=false"]
