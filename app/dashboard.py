@@ -287,7 +287,10 @@ elif page == "📂 Batch Prediction":
     st.markdown("Upload a CSV file of transactions to get fraud predictions for all rows.")
     st.markdown("---")
 
-    st.info("📋 CSV must contain the same columns as training data: `Time`, `V1-V28`, `Amount`. `Class` column is optional.")
+    st.info("📋 Upload any CSV — missing required columns will be auto-filled with 0. Extra columns will be ignored.")
+
+    with st.expander("📋 See required columns"):
+        st.write(feature_names)
 
     uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
 
@@ -296,12 +299,27 @@ elif page == "📂 Batch Prediction":
         st.markdown(f"**Loaded:** {len(df)} transactions | {df.shape[1]} columns")
         st.dataframe(df.head(5), use_container_width=True)
 
+        # Column compatibility check
+        X_raw = df.drop(columns=["Class"], errors="ignore")
+        matched  = [c for c in feature_names if c in X_raw.columns]
+        missing  = [c for c in feature_names if c not in X_raw.columns]
+        extra    = [c for c in X_raw.columns if c not in feature_names]
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("✅ Matched Columns",  len(matched))
+        col2.metric("⚠️ Missing (→ 0)",   len(missing))
+        col3.metric("🗑️ Extra (ignored)", len(extra))
+
+        if missing:
+            st.warning(f"⚠️ These {len(missing)} columns were not found and will be filled with 0: `{', '.join(missing[:10])}{'...' if len(missing) > 10 else ''}`")
+        if extra:
+            st.info(f"ℹ️ These {len(extra)} extra columns will be ignored: `{', '.join(extra[:10])}{'...' if len(extra) > 10 else ''}`")
+
         if st.button("🚀 Run Batch Prediction", use_container_width=True):
             with st.spinner("Running predictions..."):
                 try:
-                    # Drop target if present
-                    X = df.drop(columns=["Class"], errors="ignore")
-                    X = X.reindex(columns=feature_names, fill_value=0)
+                    # Auto-fill missing, drop extra
+                    X = X_raw.reindex(columns=feature_names, fill_value=0)
 
                     probabilities = pipeline.predict_proba(X)[:, 1]
                     predictions   = (probabilities >= threshold).astype(int)
@@ -364,18 +382,40 @@ elif page == "🌊 Drift Monitor":
     st.markdown("Upload new transaction data to check if it has drifted from the training distribution.")
     st.markdown("---")
 
-    st.info("📋 Upload a CSV with the same feature columns used during training. The system will compare it against the saved drift reference.")
+    st.info("📋 Upload any CSV — columns matching training features will be analyzed. Unrecognized columns are ignored automatically.")
+
+    with st.expander("📋 See training feature columns"):
+        st.write(feature_names)
 
     uploaded_file = st.file_uploader("Upload CSV for drift analysis", type=["csv"])
 
     if uploaded_file:
         df = pd.read_csv(uploaded_file)
-        st.markdown(f"**Loaded:** {len(df)} transactions")
+        X_raw     = df.drop(columns=["Class"], errors="ignore")
+        matched   = [c for c in feature_names if c in X_raw.columns]
+        unmatched = [c for c in X_raw.columns  if c not in feature_names]
+
+        st.markdown(f"**Loaded:** {len(df)} rows | {df.shape[1]} columns")
+
+        col1, col2 = st.columns(2)
+        col1.metric("✅ Columns to Analyze", len(matched))
+        col2.metric("🗑️ Columns Skipped",   len(unmatched))
+
+        if len(matched) == 0:
+            st.error("❌ None of your columns match training features. Please check your CSV.")
+            st.stop()
+        elif len(matched) < len(feature_names):
+            st.warning(f"⚠️ Only {len(matched)}/{len(feature_names)} training features found — drift analyzed on matching columns only.")
+        else:
+            st.success("✅ All training feature columns found!")
+
+        if unmatched:
+            st.info(f"ℹ️ Skipping {len(unmatched)} unrecognized columns: `{', '.join(unmatched[:10])}{'...' if len(unmatched) > 10 else ''}`")
 
         if st.button("🔍 Run Drift Analysis", use_container_width=True):
             with st.spinner("Analyzing drift..."):
                 try:
-                    X = df.drop(columns=["Class"], errors="ignore")
+                    X = X_raw[[c for c in matched]]
                     report = drift_detector.detect(X)
 
                     st.markdown("---")
