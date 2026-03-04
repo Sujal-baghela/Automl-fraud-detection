@@ -69,7 +69,7 @@ def list_versions(client):
     if champs:
         print(f"\n  Current @champion -> v{champs[0]['version']} (ROC-AUC: {champs[0]['test_roc_auc']:.5f})\n")
     else:
-        print(f"\n  No @champion set yet.\n")
+        print("\n  No @champion set yet.\n")
 
 
 def set_champion(client, version):

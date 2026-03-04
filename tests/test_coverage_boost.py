@@ -571,7 +571,7 @@ class TestDatasetProfiler:
     def test_profile_detects_imbalance(self, universal_df):
         from src.universal_trainer import DatasetProfiler
         # 160 / 40 → minority_ratio = 0.2 → is_imbalanced = True
-        assert DatasetProfiler().profile(universal_df, "label")["is_imbalanced"] == True
+        assert DatasetProfiler().profile(universal_df, "label")["is_imbalanced"] is True
 
     def test_profile_raises_on_missing_target(self, universal_df):
         from src.universal_trainer import DatasetProfiler
@@ -590,7 +590,7 @@ class TestDatasetProfiler:
 
     def test_profile_no_missing_by_default(self, universal_df):
         from src.universal_trainer import DatasetProfiler
-        assert DatasetProfiler().profile(universal_df, "label")["has_missing"] == False
+        assert DatasetProfiler().profile(universal_df, "label")["has_missing"] is False
 
     def test_profile_detects_missing_values(self):
         from src.universal_trainer import DatasetProfiler
