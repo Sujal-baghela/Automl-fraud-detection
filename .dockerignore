@@ -9,8 +9,9 @@ venv/
 .venv/
 env/
 
-# ── Dataset (too large — mount or download separately) ────────
+# ── Dataset (too large) ───────────────────────────────────────
 Data/creditcard.csv
+*.csv
 
 # ── Git ───────────────────────────────────────────────────────
 .git/
@@ -32,7 +33,12 @@ logs/
 .ipynb_checkpoints/
 *.ipynb
 
-# ── Docker itself ─────────────────────────────────────────────
-Dockerfile
-docker-compose.yml
-.dockerignore
+# ── Tests (not needed in production image) ────────────────────
+tests/
+.pytest_cache/
+.ruff_cache/
+coverage.xml
+.coverage
+
+# ── Dev only ──────────────────────────────────────────────────
+htmlcov/
