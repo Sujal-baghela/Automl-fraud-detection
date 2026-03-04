@@ -1,51 +1,47 @@
-# ── Stage 1: Base image ───────────────────────────────────────
-# python:3.10-slim is the standard production choice:
-# - Full Python 3.10 without dev tools or docs (~150MB vs ~900MB)
-# - Matches your local venv Python version exactly
+# ── AutoML-X Fraud Detection — Hugging Face Spaces Dockerfile ─
+# Runs 3 services in one container:
+#   - FastAPI     → port 7860 (HF Spaces default)
+#   - Streamlit   → port 8501
+#   - MLflow UI   → port 5000
+# supervisord manages all 3 processes.
+
 FROM python:3.11-slim
 
-# ── Metadata ──────────────────────────────────────────────────
-LABEL maintainer="Sujal Baghela <sujal@example.com>"
-LABEL description="AutoML-X Fraud Detection API"
-LABEL version="1.0"
+LABEL maintainer="Sujal Baghela"
+LABEL description="AutoML-X Fraud Detection — Full Stack"
+LABEL version="2.0"
 
 # ── System dependencies ───────────────────────────────────────
-# libgomp1 is required by LightGBM for OpenMP parallelization.
-# Without it LightGBM will crash on import inside the container.
 RUN apt-get update && apt-get install -y \
     libgomp1 \
+    supervisor \
     && rm -rf /var/lib/apt/lists/*
+
+# ── Hugging Face Spaces requires a non-root user ─────────────
+RUN useradd -m -u 1000 appuser
 
 # ── Working directory ─────────────────────────────────────────
 WORKDIR /app
 
 # ── Install Python dependencies ───────────────────────────────
-# Copy requirements first — Docker caches this layer separately.
-# If only your code changes (not requirements), this layer is
-# reused and pip install is skipped on rebuild. Saves ~2 minutes.
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # ── Copy project files ────────────────────────────────────────
-# Copy everything except what's in .dockerignore
 COPY . .
 
 # ── Create required directories ───────────────────────────────
-# These are gitignored so they won't exist in the repo clone.
-# The API needs them to exist at startup.
-RUN mkdir -p models reports/evaluation reports/shap logs
+RUN mkdir -p models reports/evaluation reports/shap logs \
+    && chown -R appuser:appuser /app
 
-# ── Port ──────────────────────────────────────────────────────
-EXPOSE 8000
+# ── Supervisord config — manages all 3 services ───────────────
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
-# ── Health check ──────────────────────────────────────────────
-# Docker will ping /health every 30s.
-# If it fails 3 times the container is marked unhealthy.
-HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/')" || exit 1
+# ── Switch to non-root user (required by HF Spaces) ──────────
+USER appuser
 
-# ── Start command ─────────────────────────────────────────────
-# --host 0.0.0.0  → accept connections from outside the container
-# --port 8000     → match EXPOSE above
-# --workers 1     → single worker (scale with docker-compose if needed)
-CMD ["uvicorn", "app.api:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+# ── HF Spaces uses port 7860 by default ──────────────────────
+EXPOSE 7860 8501 5000
+
+# ── Start all services via supervisord ───────────────────────
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
