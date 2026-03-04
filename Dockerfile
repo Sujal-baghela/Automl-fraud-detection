@@ -5,7 +5,6 @@ LABEL maintainer="Sujal Baghela"
 # ── System dependencies ───────────────────────────────────────
 RUN apt-get update && apt-get install -y \
     libgomp1 \
-    supervisor \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Create non-root user ──────────────────────────────────────
@@ -20,17 +19,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # ── Copy project files ────────────────────────────────────────
 COPY . .
 
-# ── Create required directories & fix permissions ─────────────
+# ── Create required directories & permissions ─────────────────
 RUN mkdir -p models logs \
     && chown -R appuser:appuser /app \
-    && chmod -R 755 /tmp
-
-# ── Supervisord config ────────────────────────────────────────
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+    && chmod +x start.sh
 
 USER appuser
 
 EXPOSE 7860 8501
 
-# ── Start both services via supervisord ──────────────────────
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+CMD ["bash", "start.sh"]
