@@ -6,6 +6,8 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from src.shap_explainer import IntelligentSHAP
+from src.monitor import ModelMonitor
+from src.alerting import AlertManager
 
 
 # ======================================
@@ -27,19 +29,17 @@ app = FastAPI(
 
 # ======================================
 # Load Model Package at Startup
-# FIX: fraud_system.py saves a dict — load it as such
 # ======================================
 
 try:
     model_data = joblib.load("models/best_model.pkl")
 
-    pipeline       = model_data["model"]
-    threshold      = model_data["threshold"]
-    objective      = model_data.get("objective", "cost")
-    cv_score       = model_data.get("cv_score")
-    model_version  = model_data.get("model_version", "unknown")
+    pipeline      = model_data["model"]
+    threshold     = model_data["threshold"]
+    objective     = model_data.get("objective", "cost")
+    cv_score      = model_data.get("cv_score")
+    model_version = model_data.get("model_version", "unknown")
 
-    # Support both key names for feature list
     feature_names = (
         model_data.get("feature_names") or
         model_data.get("features")
@@ -59,7 +59,6 @@ except Exception as e:
 
 # ======================================
 # SHAP Engine Setup
-# FIX: use IntelligentSHAP wrapper instead of raw shap.TreeExplainer
 # ======================================
 
 try:
@@ -68,6 +67,16 @@ try:
 except Exception as e:
     logger.warning("SHAP engine could not be initialized: %s", e)
     shap_engine = None
+
+
+# ======================================
+# Monitoring & Alerting Setup
+# ======================================
+
+monitor = ModelMonitor()
+alert_manager = AlertManager()   # Slack webhook via AUTOML_SLACK_WEBHOOK env var
+
+logger.info("ModelMonitor and AlertManager initialized.")
 
 
 # ======================================
@@ -139,32 +148,64 @@ def model_info():
 
 
 # ======================================
+# Monitor Health Route
+# ======================================
+
+@app.get("/monitor/health")
+def monitor_health():
+    """System health: DB status, prediction counts, component availability."""
+    return monitor.check_health()
+
+
+@app.get("/monitor/summary")
+def monitor_summary(last_n: int = 100):
+    """Rolling prediction statistics over last N requests."""
+    return monitor.get_summary(last_n=last_n)
+
+
+@app.get("/monitor/alerts")
+def monitor_alerts(last_n: int = 50):
+    """Alert history from the SQLite alert log."""
+    return {"alerts": monitor.get_alert_history(last_n=last_n)}
+
+
+@app.post("/monitor/check-alerts")
+def monitor_check_alerts(last_n: int = 100):
+    """
+    Manually trigger alert rule evaluation.
+    Returns any currently fired alerts (does not send to Slack/log).
+    """
+    fired = monitor.trigger_alerts(last_n=last_n)
+    return {
+        "fired_count": len(fired),
+        "alerts": [
+            {
+                "name":     a.name,
+                "severity": a.severity,
+                "message":  a.message,
+                "extra":    a.extra,
+            }
+            for a in fired
+        ]
+    }
+
+
+# ======================================
 # Prediction Endpoint
-# FIX: uses optimized threshold, not sklearn default 0.5
-# FIX: risk level relative to threshold, not hardcoded constants
-# FIX: uses IntelligentSHAP for explanation
 # ======================================
 
 @app.post("/predict")
 def predict(transaction: Transaction):
     try:
-        # Convert request to DataFrame
         input_dict = transaction.model_dump()
-        input_df = pd.DataFrame([input_dict])
+        input_df   = pd.DataFrame([input_dict])
+        input_df   = input_df.reindex(columns=feature_names, fill_value=0)
 
-        # Align columns to training feature order
-        input_df = input_df.reindex(columns=feature_names, fill_value=0)
-
-        # ==============================
-        # Prediction using optimized threshold
-        # ==============================
+        # Prediction
         probability = float(pipeline.predict_proba(input_df)[0][1])
-        prediction = int(probability >= threshold)
+        prediction  = int(probability >= threshold)
 
-        # ==============================
-        # Risk Classification
-        # FIX: risk levels relative to optimized threshold, not arbitrary constants
-        # ==============================
+        # Risk classification (relative to optimized threshold)
         low_boundary    = threshold * 0.25
         medium_boundary = threshold * 0.75
 
@@ -175,11 +216,8 @@ def predict(transaction: Transaction):
         else:
             risk_level = "High"
 
-        # ==============================
-        # SHAP Explanation via IntelligentSHAP
-        # ==============================
+        # SHAP explanation
         explanation = {}
-
         if shap_engine is not None:
             try:
                 explanation = shap_engine.local_explanation_json(
@@ -189,23 +227,29 @@ def predict(transaction: Transaction):
                 logger.warning("SHAP explanation failed: %s", shap_error)
                 explanation = {"error": "SHAP explanation unavailable"}
 
-        # ==============================
-        # Response
-        # ==============================
+        # ── Monitoring integration ─────────────────────────────────────
+        # probability is the raw [0,1] float from predict_proba (not %-scaled)
+        try:
+            monitor.log_prediction(input_dict, prediction, probability)
+        except Exception as mon_err:
+            # Never let monitoring errors break prediction responses
+            logger.warning("monitor.log_prediction failed: %s", mon_err)
+        # ──────────────────────────────────────────────────────────────
+
         return {
             "model_info": {
-                "version": model_version,
+                "version":   model_version,
                 "objective": objective,
-                "cv_score": round(cv_score, 5) if cv_score else None,
+                "cv_score":  round(cv_score, 5) if cv_score else None,
             },
             "prediction_result": {
                 "fraud_probability_percent": round(probability * 100, 6),
-                "threshold_used": round(threshold, 5),
-                "predicted_class": prediction,
-                "label": "Fraud" if prediction == 1 else "Legitimate",
-                "risk_level": risk_level
+                "threshold_used":            round(threshold, 5),
+                "predicted_class":           prediction,
+                "label":                     "Fraud" if prediction == 1 else "Legitimate",
+                "risk_level":                risk_level,
             },
-            "explanation": explanation
+            "explanation": explanation,
         }
 
     except Exception as e:
@@ -224,12 +268,12 @@ class BatchTransactions(BaseModel):
 @app.post("/predict/batch")
 def predict_batch(batch: BatchTransactions):
     try:
-        records = [t.model_dump() for t in batch.transactions]
+        records  = [t.model_dump() for t in batch.transactions]
         input_df = pd.DataFrame(records)
         input_df = input_df.reindex(columns=feature_names, fill_value=0)
 
         probabilities = pipeline.predict_proba(input_df)[:, 1]
-        predictions = (probabilities >= threshold).astype(int)
+        predictions   = (probabilities >= threshold).astype(int)
 
         results = []
         for i, (prob, pred) in enumerate(zip(probabilities, predictions)):
@@ -245,18 +289,26 @@ def predict_batch(batch: BatchTransactions):
                 risk_level = "High"
 
             results.append({
-                "index": i,
+                "index":                    i,
                 "fraud_probability_percent": round(prob * 100, 6),
-                "predicted_class": int(pred),
-                "label": "Fraud" if pred == 1 else "Legitimate",
-                "risk_level": risk_level
+                "predicted_class":          int(pred),
+                "label":                    "Fraud" if pred == 1 else "Legitimate",
+                "risk_level":               risk_level,
             })
 
+        # ── Monitoring integration (batch) ─────────────────────────────
+        try:
+            for record, pred, prob in zip(records, predictions, probabilities):
+                monitor.log_prediction(record, int(pred), float(prob))
+        except Exception as mon_err:
+            logger.warning("monitor.log_prediction (batch) failed: %s", mon_err)
+        # ──────────────────────────────────────────────────────────────
+
         return {
-            "threshold_used": round(threshold, 5),
+            "threshold_used":     round(threshold, 5),
             "total_transactions": len(results),
-            "fraud_count": int(sum(predictions)),
-            "results": results
+            "fraud_count":        int(sum(predictions)),
+            "results":            results,
         }
 
     except Exception as e:
