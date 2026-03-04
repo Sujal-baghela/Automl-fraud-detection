@@ -19,7 +19,7 @@ matplotlib==3.10.8
 mlflow
 numba==0.63.1
 numpy==2.3.5
-packaging==26.0
+packaging>=20.0,<25
 pandas==3.0.1
 pillow==12.1.1
 psutil
