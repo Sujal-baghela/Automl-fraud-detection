@@ -1,3 +1,12 @@
+---
+title: AutoML-X Fraud Detection
+emoji: 🛡️
+colorFrom: red
+colorTo: blue
+sdk: docker
+pinned: false
+---
+
 # 🛡️ AutoML-X — Intelligent Fraud Detection System
 
 ![Python](https://img.shields.io/badge/Python-3.11-blue?style=flat-square&logo=python)
@@ -8,8 +17,8 @@
 ![XGBoost](https://img.shields.io/badge/XGBoost-Competing-blue?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)
 [![CI](https://github.com/Sujal-baghela/Automl-fraud-detection/actions/workflows/ci.yml/badge.svg)](https://github.com/Sujal-baghela/Automl-fraud-detection/actions/workflows/ci.yml)
-![Tests](https://img.shields.io/badge/Tests-53%20passing-brightgreen?style=flat-square)
-![Coverage](https://img.shields.io/badge/Coverage-58%25-yellow?style=flat-square)
+![Tests](https://img.shields.io/badge/Tests-285%20passing-brightgreen?style=flat-square)
+![Coverage](https://img.shields.io/badge/Coverage-99%25-brightgreen?style=flat-square)
 
 ---
 
@@ -33,8 +42,19 @@ Built as a **Minor Project** at **Madhav Institute of Technology and Science**.
 | ⚡ Optimal Threshold | **0.20603** (cost-optimized) |
 | 🔢 Total Features | **35** (30 original + 5 engineered) |
 | 🔁 Imbalance Handling | SMOTE (50/50 balanced) |
-| 🧪 Test Suite | **53 tests passing** across 10 classes |
+| 🧪 Test Suite | **285 tests passing** |
 | 📋 CI/CD | GitHub Actions — lint + test on every push |
+| 📊 Coverage | **99%** |
+
+---
+
+## 🌐 Live Demo
+
+| Service | URL |
+|---|---|
+| FastAPI REST API | `https://dark-ui-automl-x-fraud-detection.hf.space` |
+| Streamlit Dashboard | `https://dark-ui-automl-x-fraud-detection-8501.hf.space` |
+| MLflow UI | `https://dark-ui-automl-x-fraud-detection-5000.hf.space` |
 
 ---
 
@@ -105,14 +125,34 @@ creditcard.csv
  DriftDetector ──► PSI + KS test on new data
       │
       ▼
+ ModelMonitor ──► SQLite logging + alert rules
+      │
+      ▼
+ AlertManager ──► Slack webhook + log file
+      │
+      ▼
  MLflow ──► experiment tracking + model registry
 ```
 
 ---
 
-## 🧪 Experimentation Journey
+## 🔧 New: Monitoring & Alerting
 
-5 systematic experiments were run to optimize recall and business cost:
+| Endpoint | Method | Description |
+|---|---|---|
+| `/monitor/health` | GET | System health + DB status |
+| `/monitor/summary` | GET | Rolling prediction statistics |
+| `/monitor/alerts` | GET | Alert history |
+| `/monitor/check-alerts` | POST | Trigger alert rule evaluation |
+
+Alert rules:
+- 🔴 **CRITICAL** — Fraud rate exceeds 30% in last 100 predictions
+- 🟡 **WARNING** — Average model confidence drops below 60%
+- 🟡 **WARNING** — Data drift detected (PSI ≥ 0.1 on 10%+ of features)
+
+---
+
+## 🧪 Experimentation Journey
 
 | Run | Technique | Model | Recall | Cost | Outcome |
 |-----|-----------|-------|--------|------|---------|
@@ -122,35 +162,13 @@ creditcard.csv
 | 4 | SMOTE + Feature Eng. | LightGBM_Balanced | 88.8% | $118,800 | Best Test AUC |
 | **5** | **SMOTE + Feature Eng.** | **RandomForest (35 features)** | **89.8%** | **$113,800** | **✅ Final** |
 
-Feature engineering caught **4 additional borderline frauds** that the model previously missed — proving domain-aware feature extraction adds measurable value beyond hyperparameter tuning alone.
-
----
-
-## 🔧 Feature Engineering
-
-The raw dataset has `V1–V28` (PCA-anonymized) plus `Time` and `Amount` (original). Five new features were derived:
-
-| Feature | Description | Why It Helps |
-|---------|-------------|--------------|
-| `Hour` | Hour of day (0–23) | Fraud rates vary by time of day |
-| `Night_txn` | 1 if between 10pm–6am | Direct signal for suspicious hours |
-| `Amount_log` | log(1 + Amount) | Compresses right skew for fair treatment |
-| `Amount_zscore` | Standard deviations from mean | Flags unusually sized transactions |
-| `High_amount` | 1 if Amount > $1,000 | Direct signal for high-value transactions |
-
 ---
 
 ## 💰 Business Cost Optimization
 
-Instead of the default 0.5 threshold, `BusinessCostOptimizer` searches threshold values using actual predicted probabilities to minimize:
-
 ```
 Total Cost = (Missed Frauds × $10,000) + (False Alarms × $200)
-```
 
-Missing a fraud costs **50× more** than a false alarm. The optimizer reflects this — accepting more false alarms to catch more real fraud.
-
-```
 Final result at threshold 0.20603:
   10 frauds missed  ×  $10,000  =  $100,000
   69 false alarms   ×    $200   =   $13,800
@@ -160,163 +178,33 @@ Final result at threshold 0.20603:
 
 ---
 
-## 🧪 Test Suite
-
-53 unit tests across 10 test classes — all passing in CI:
-
-| Test Class | Tests | What It Covers |
-|---|---|---|
-| `TestFeatureEngineering` | 7 | Hour range, binary flags, no nulls, immutability |
-| `TestDataLoader` | 6 | Load, split, missing target, metadata |
-| `TestDataCleaner` | 6 | Duplicates, imputation, outlier detection |
-| `TestDriftDetector` | 8 | Fit, detect, save/load, threshold preservation |
-| `TestThresholdOptimizer` | 5 | All 3 strategies, invalid strategy, recall check |
-| `TestBusinessCostOptimizer` | 5 | Cost minimization, asymmetric loss behavior |
-| `TestAutoModelSelector` | 4 | Pipeline structure, CV scores, predict_proba |
-| `TestAutoMLFraudDetector` | 8 | Fit, predict, save/load, version, None guard |
-| `TestGenerateEvaluationReports` | 3 | ROC-AUC, file outputs, return keys |
-| `TestSavedArtifacts` | 3 | Model package keys, metadata (skip if no model) |
-
-**🟢 Run locally:**
-
-```bash
-pytest tests/ -v --tb=short
-```
-
----
-
-## 🔁 CI/CD Pipeline
-
-Every push to `main` triggers two jobs automatically:
-
-```
-Push to main
-      │
-      ▼
- ┌─── Lint (ruff) ───────────────────────────────┐
- │  Checks code style across all .py files       │
- │  Fails fast on syntax/style errors            │
- └───────────────────────────────────────────────┘
-      │ (only runs if lint passes)
-      ▼
- ┌─── Test (pytest) ──────────────────────────────┐
- │  Runs 53 unit tests with coverage             │
- │  Uploads coverage.xml as artifact             │
- │  Uses pip caching for fast runs (~1m 30s)     │
- └────────────────────────────────────────────────┘
-```
-
----
-
-## 📂 Project Structure
-
-```
-automl-x/
-│
-├── .github/
-│   └── workflows/
-│       └── ci.yml              # GitHub Actions — lint + test pipeline
-│
-├── app/
-│   └── api.py                  # FastAPI REST API (single + batch prediction)
-│
-├── Scripts/
-│   ├── __init__.py
-│   └── train.py                # Training entry point + feature engineering
-│
-├── src/
-│   ├── model_selector.py       # AutoML — 5 models compete via CV
-│   ├── fraud_system.py         # Main orchestrator (fit, predict, save, load)
-│   ├── cost_optimizer.py       # Business cost threshold optimization
-│   ├── threshold_optimizer.py  # Metric-based threshold (F1, recall, precision)
-│   ├── shap_explainer.py       # SHAP explainability (SHAP 0.50.0 compatible)
-│   ├── inference_engine.py     # Production inference engine
-│   ├── evaluation.py           # ROC curve, confusion matrix, report generation
-│   ├── drift_detector.py       # PSI + KS test data drift detection
-│   ├── data_loader.py          # Dataset loading and validation
-│   └── cleaner.py              # Data cleaning utilities
-│
-├── tests/
-│   ├── __init__.py
-│   ├── conftest.py             # Shared pytest path configuration
-│   └── test_pipeline.py        # 53 unit tests across 10 classes
-│
-├── models/
-│   ├── best_model.pkl          # Trained model package (gitignored)
-│   ├── drift_reference.json    # Drift detector reference statistics
-│   └── metadata_v1.json        # Model metadata and training config
-│
-├── reports/
-│   ├── evaluation/             # ROC curve, confusion matrix, classification report
-│   └── shap/                   # SHAP beeswarm and bar plots
-│
-├── Data/
-│   └── .gitkeep                # Placeholder — add creditcard.csv here
-│
-├── .gitattributes              # Normalize line endings across OS
-├── .gitignore
-├── .dockerignore
-├── Dockerfile
-├── docker-compose.yml
-├── requirements.txt
-└── README.md
-```
-
----
-
 ## 🚀 Quick Start
 
-**1. Clone the repository**
-
 ```bash
+# 1. Clone
 git clone https://github.com/Sujal-baghela/Automl-fraud-detection.git
 cd Automl-fraud-detection
-```
 
-**2. Create virtual environment**
-
-```bash
-python -m venv venv
-
-# Windows
-venv\Scripts\activate
-
-# Mac/Linux
-source venv/bin/activate
-```
-
-**3. Install dependencies**
-
-```bash
+# 2. Install
 pip install -r requirements.txt
-```
 
-**4. Download the dataset**
+# 3. Add dataset
+# Download creditcard.csv from Kaggle → place at Data/creditcard.csv
 
-Download `creditcard.csv` from [Kaggle](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud) and place it at `Data/creditcard.csv`.
-
-**5. Train the model**
-
-```bash
+# 4. Train
 python -m Scripts.train
-```
 
-**6. Start the API**
-
-```bash
+# 5. Run API
 uvicorn app.api:app --reload --port 8000
-```
 
-**7. Open Swagger UI**
+# 6. Run Dashboard
+streamlit run app/dashboard.py
 
-```
-http://127.0.0.1:8000/docs
-```
-
-**8. View MLflow experiments**
-
-```bash
+# 7. Run MLflow
 mlflow ui --port 5000
+
+# 8. Docker (all services)
+docker-compose up --build
 ```
 
 ---
@@ -325,69 +213,44 @@ mlflow ui --port 5000
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/` | Health check + model info |
-| `GET` | `/model-info` | Full model metadata + feature list |
-| `POST` | `/predict` | Single transaction prediction + SHAP |
-| `POST` | `/predict/batch` | Batch prediction for multiple transactions |
-
-**Sample Request**
-
-```bash
-curl -X POST "http://127.0.0.1:8000/predict" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "Time": 406.0, "Amount": 149.62,
-    "V1": -1.35, "V2": -0.07, "V3": 2.53,
-    "V4": 1.37, "V5": -0.33, "V6": 0.46,
-    "V7": 0.23, "V8": 0.09, "V9": 0.36,
-    "V10": 0.09, "V11": -0.55, "V12": -0.61,
-    "V13": -0.99, "V14": -0.31, "V15": 1.46,
-    "V16": -0.47, "V17": 0.20, "V18": 0.02,
-    "V19": 0.40, "V20": 0.25, "V21": -0.01,
-    "V22": 0.27, "V23": -0.11, "V24": 0.06,
-    "V25": 0.12, "V26": -0.18, "V27": 0.13,
-    "V28": -0.02
-  }'
-```
-
-**Sample Response**
-
-```json
-{
-  "model_info": {
-    "version": "v5",
-    "objective": "cost",
-    "cv_score": 0.99999
-  },
-  "prediction_result": {
-    "fraud_probability_percent": 23.4,
-    "threshold_used": 0.20603,
-    "predicted_class": 1,
-    "label": "Fraud",
-    "risk_level": "High"
-  },
-  "explanation": {
-    "base_value": 0.00173,
-    "top_positive_features": [
-      {"feature": "num__V14", "impact": 0.0842},
-      {"feature": "num__V4",  "impact": 0.0631}
-    ],
-    "top_negative_features": [
-      {"feature": "num__V12", "impact": -0.0521}
-    ]
-  }
-}
-```
+| `GET` | `/` | Health check |
+| `GET` | `/model-info` | Model metadata |
+| `POST` | `/predict` | Single prediction + SHAP |
+| `POST` | `/predict/batch` | Batch prediction |
+| `GET` | `/monitor/health` | System health |
+| `GET` | `/monitor/summary` | Rolling stats |
+| `GET` | `/monitor/alerts` | Alert history |
 
 ---
 
-## 🐳 Docker
+## 📂 Project Structure
 
-```bash
-# Build and run with Docker Compose
-docker-compose up --build
-
-# API will be available at http://localhost:8000
+```
+automl-x/
+├── .github/workflows/ci.yml
+├── app/
+│   ├── api.py                  # FastAPI + monitoring integration
+│   ├── dashboard.py            # Streamlit dashboard
+│   └── universal.py
+├── src/
+│   ├── monitor.py              # ModelMonitor — SQLite logging
+│   ├── alerting.py             # AlertManager — Slack + log file
+│   ├── drift_detector.py
+│   ├── fraud_system.py
+│   ├── inference_engine.py
+│   ├── model_selector.py
+│   └── ...
+├── tests/
+│   ├── test_monitor.py         # 96 tests
+│   ├── test_pipeline.py
+│   └── ...
+├── models/
+│   ├── best_model.pkl
+│   └── drift_reference.json
+├── Dockerfile
+├── supervisord.conf
+├── docker-compose.yml
+└── requirements.txt
 ```
 
 ---
@@ -400,29 +263,15 @@ docker-compose up --build
 | Imbalance | imbalanced-learn (SMOTE) |
 | Explainability | SHAP 0.50.0 |
 | API | FastAPI, Uvicorn |
+| Dashboard | Streamlit |
+| Monitoring | SQLite, custom ModelMonitor |
+| Alerting | Slack webhook, log file |
 | Experiment Tracking | MLflow |
 | Data | Pandas, NumPy, SciPy |
 | Visualization | Matplotlib, Seaborn |
-| Serialization | Joblib |
-| Testing | pytest, pytest-cov |
+| Testing | pytest, pytest-cov (99% coverage) |
 | Linting | Ruff |
 | CI/CD | GitHub Actions |
-
----
-
-## 📋 Dataset
-
-**Credit Card Fraud Detection** — European cardholders, September 2013.
-
-- 284,807 transactions over 2 days
-- 492 frauds (0.17% — highly imbalanced)
-- Features V1–V28 are PCA-transformed (anonymized)
-- Features `Time` and `Amount` are original
-- Binary target: `0` = Legitimate, `1` = Fraud
-
-Source: [Kaggle — ULB Machine Learning Group](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud)
-
-> ⚠️ Dataset not included due to size and licensing. Download from Kaggle and place at `Data/creditcard.csv`.
 
 ---
 
@@ -438,4 +287,4 @@ Source: [Kaggle — ULB Machine Learning Group](https://www.kaggle.com/datasets/
 
 ## 📄 License
 
-This project is licensed under the MIT License.
+MIT License
