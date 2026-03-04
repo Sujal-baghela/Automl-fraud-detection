@@ -571,7 +571,7 @@ class TestDatasetProfiler:
     def test_profile_detects_imbalance(self, universal_df):
         from src.universal_trainer import DatasetProfiler
         # 160 / 40 → minority_ratio = 0.2 → is_imbalanced = True
-        assert DatasetProfiler().profile(universal_df, "label")["is_imbalanced"] is True
+        assert DatasetProfiler().profile(universal_df, "label")["is_imbalanced"]
 
     def test_profile_raises_on_missing_target(self, universal_df):
         from src.universal_trainer import DatasetProfiler
