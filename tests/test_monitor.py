@@ -910,8 +910,10 @@ class TestThreadSafety:
                 errors.append(exc)
 
         threads = [threading.Thread(target=log_many) for _ in range(5)]
-        for t in threads: t.start()
-        for t in threads: t.join()
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
 
         assert errors == []
         assert monitor.get_total_predictions() == 100
@@ -930,8 +932,10 @@ class TestThreadSafety:
                 errors.append(exc)
 
         threads = [threading.Thread(target=send_many) for _ in range(4)]
-        for t in threads: t.start()
-        for t in threads: t.join()
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
         assert errors == []
 
 
