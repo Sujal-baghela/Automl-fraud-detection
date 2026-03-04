@@ -201,7 +201,7 @@ def main():
             # Auto-promote if best ROC-AUC
             try:
                 client = mlflow.MlflowClient()
-                run_id = mlflow.active_run().info.run_id
+               
                 mv = client.get_latest_versions("automl-fraud-detector")[-1]
                 client.set_registered_model_alias(
                     "automl-fraud-detector", "champion", mv.version
