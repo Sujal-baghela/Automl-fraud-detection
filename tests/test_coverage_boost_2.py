@@ -311,7 +311,7 @@ class TestUniversalTrainerGaps:
             "label":    [0] * 160 + [1] * 40,
         })
         trainer = UniversalTrainer(model_save_path=str(tmp_path / "u.pkl"))
-        metrics = trainer.fit(df, target_col="label")
+        trainer.fit(df, target_col="label")
         assert "high_card" not in trainer.feature_names
 
     def test_fit_with_sample_if_large_false(self, universal_df, tmp_path):
