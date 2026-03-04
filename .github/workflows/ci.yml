@@ -54,7 +54,7 @@ jobs:
             lightgbm xgboost joblib \
             shap seaborn matplotlib \
             mlflow fastapi httpx pydantic \
-            uvicorn
+            uvicorn psutil
 
       - name: Run tests with coverage
         run: |
