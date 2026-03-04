@@ -1,17 +1,16 @@
 FROM python:3.11-slim
 
 LABEL maintainer="Sujal Baghela"
-LABEL description="AutoML-X Fraud Detection API"
 
 # ── System dependencies ───────────────────────────────────────
 RUN apt-get update && apt-get install -y \
     libgomp1 \
+    supervisor \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Create non-root user (required by HF Spaces) ─────────────
+# ── Create non-root user ──────────────────────────────────────
 RUN useradd -m -u 1000 appuser
 
-# ── Working directory ─────────────────────────────────────────
 WORKDIR /app
 
 # ── Install Python dependencies ───────────────────────────────
@@ -21,15 +20,17 @@ RUN pip install --no-cache-dir -r requirements.txt
 # ── Copy project files ────────────────────────────────────────
 COPY . .
 
-# ── Create required directories ───────────────────────────────
-RUN mkdir -p models reports/evaluation reports/shap logs \
-    && chown -R appuser:appuser /app
+# ── Create required directories & fix permissions ─────────────
+RUN mkdir -p models logs \
+    && chown -R appuser:appuser /app \
+    && chmod -R 755 /tmp
 
-# ── Switch to non-root user ───────────────────────────────────
+# ── Supervisord config ────────────────────────────────────────
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
 USER appuser
 
-# ── HF Spaces default port ────────────────────────────────────
-EXPOSE 7860
+EXPOSE 7860 8501
 
-# ── Start FastAPI only (simple and reliable) ──────────────────
-CMD ["uvicorn", "app.api:app", "--host", "0.0.0.0", "--port", "7860", "--workers", "1"]
+# ── Start both services via supervisord ──────────────────────
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
