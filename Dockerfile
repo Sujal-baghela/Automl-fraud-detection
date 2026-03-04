@@ -1,23 +1,14 @@
-# ── AutoML-X Fraud Detection — Hugging Face Spaces Dockerfile ─
-# Runs 3 services in one container:
-#   - FastAPI     → port 7860 (HF Spaces default)
-#   - Streamlit   → port 8501
-#   - MLflow UI   → port 5000
-# supervisord manages all 3 processes.
-
 FROM python:3.11-slim
 
 LABEL maintainer="Sujal Baghela"
-LABEL description="AutoML-X Fraud Detection — Full Stack"
-LABEL version="2.0"
+LABEL description="AutoML-X Fraud Detection API"
 
 # ── System dependencies ───────────────────────────────────────
 RUN apt-get update && apt-get install -y \
     libgomp1 \
-    supervisor \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Hugging Face Spaces requires a non-root user ─────────────
+# ── Create non-root user (required by HF Spaces) ─────────────
 RUN useradd -m -u 1000 appuser
 
 # ── Working directory ─────────────────────────────────────────
@@ -34,14 +25,11 @@ COPY . .
 RUN mkdir -p models reports/evaluation reports/shap logs \
     && chown -R appuser:appuser /app
 
-# ── Supervisord config — manages all 3 services ───────────────
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-
-# ── Switch to non-root user (required by HF Spaces) ──────────
+# ── Switch to non-root user ───────────────────────────────────
 USER appuser
 
-# ── HF Spaces uses port 7860 by default ──────────────────────
-EXPOSE 7860 8501 5000
+# ── HF Spaces default port ────────────────────────────────────
+EXPOSE 7860
 
-# ── Start all services via supervisord ───────────────────────
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+# ── Start FastAPI only (simple and reliable) ──────────────────
+CMD ["uvicorn", "app.api:app", "--host", "0.0.0.0", "--port", "7860", "--workers", "1"]
