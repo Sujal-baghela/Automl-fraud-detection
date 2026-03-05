@@ -693,7 +693,7 @@ with st.sidebar:
     sidebar_model_status(active_trainer)
 
     st.markdown("<br>", unsafe_allow_html=True)
-    page = st.radio("", [
+    page = st.radio("Navigation", [
         "01 — Upload",
         "02 — Analyze",
         "03 — Train",
