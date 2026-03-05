@@ -128,11 +128,109 @@ html,body,[class*="css"]{font-family:'Inter',sans-serif;background:#0a0a0f!impor
 .result-prob{font-family:'JetBrains Mono',monospace;font-size:3.5rem;font-weight:600;line-height:1;margin-bottom:.6rem}
 .result-meta{font-family:'JetBrains Mono',monospace;font-size:.65rem;color:#3a3a5c;letter-spacing:1.5px}
 
-.model-card{background:rgba(99,102,241,.05);border:1px solid rgba(99,102,241,.12);border-radius:8px;padding:.9rem 1rem;margin:.8rem 0}
-.model-card-empty{background:#0a0a14;border:1px dashed #1a1a2e;border-radius:8px;padding:.9rem 1rem;margin:.8rem 0;text-align:center;font-family:'JetBrains Mono',monospace;font-size:.65rem;color:#2a2a4a;letter-spacing:1.5px}
-.ms-row{display:flex;justify-content:space-between;align-items:center;padding:.22rem 0;font-family:'JetBrains Mono',monospace;font-size:.68rem}
-.ms-key{color:#3a3a5c}
-.ms-val{color:#a5b4fc}
+/* ── SIDEBAR MODEL CARD — REDESIGNED ──────────────────────────────────────── */
+.model-card{
+    background: linear-gradient(135deg, #0e0e1c, #11111f);
+    border: 1px solid rgba(99,102,241,.35);
+    border-radius: 10px;
+    padding: .85rem 1rem;
+    margin: .8rem 0;
+    position: relative;
+    overflow: hidden;
+}
+.model-card::before{
+    content:'';
+    position:absolute;
+    top:0;left:0;right:0;
+    height:2px;
+    background:linear-gradient(90deg,#6366f1,#818cf8,#34d399);
+}
+.model-card-header{
+    font-family:'JetBrains Mono',monospace;
+    font-size:.58rem;
+    color:#6366f1;
+    letter-spacing:2.5px;
+    text-transform:uppercase;
+    margin-bottom:.65rem;
+    display:flex;
+    align-items:center;
+    gap:6px;
+}
+.model-card-header::before{
+    content:'';
+    display:inline-block;
+    width:5px;height:5px;
+    border-radius:50%;
+    background:#34d399;
+    box-shadow:0 0 6px #34d399;
+    flex-shrink:0;
+}
+.model-card-empty{
+    background:#0a0a14;
+    border:1px dashed #1a1a2e;
+    border-radius:8px;
+    padding:.9rem 1rem;
+    margin:.8rem 0;
+    text-align:center;
+    font-family:'JetBrains Mono',monospace;
+    font-size:.65rem;
+    color:#2a2a4a;
+    letter-spacing:1.5px;
+}
+.ms-row{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:.28rem 0;
+    font-family:'JetBrains Mono',monospace;
+    font-size:.68rem;
+    border-bottom: 1px solid rgba(255,255,255,.03);
+}
+.ms-row:last-child{border-bottom:none}
+/* KEY: was #3a3a5c (nearly invisible) — now proper muted label */
+.ms-key{color:#7070a0;letter-spacing:.5px}
+/* VAL: was #a5b4fc (too dim) — now bright white-blue for readability */
+.ms-val{color:#e0e4ff;font-weight:500}
+.ms-val-green{color:#34d399;font-weight:500}
+.ms-val-amber{color:#fbbf24;font-weight:500}
+
+/* ── TIER SYSTEM LEGEND — REDESIGNED ──────────────────────────────────────── */
+.tier-legend{
+    background:#0b0b16;
+    border:1px solid rgba(99,102,241,.18);
+    border-radius:8px;
+    padding:.65rem .75rem;
+    margin-top:.3rem;
+}
+.tier-legend-row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:.3rem .2rem;
+    border-radius:4px;
+    transition:background .15s;
+}
+.tier-legend-row:hover{background:rgba(255,255,255,.03)}
+.tier-dot{
+    width:7px;height:7px;
+    border-radius:50%;
+    flex-shrink:0;
+}
+/* TIER NAME: was {color}88 (50% opacity = washed out) — now full color */
+.tier-name{
+    font-family:'JetBrains Mono',monospace;
+    font-size:.63rem;
+    font-weight:600;
+    letter-spacing:.5px;
+    flex:1;
+}
+/* RANGE: was #2a2a4a (near black on dark bg) — now readable muted */
+.tier-range{
+    font-family:'JetBrains Mono',monospace;
+    font-size:.6rem;
+    color:#5a5a80;
+    text-align:right;
+}
 
 .stButton>button{background:#0e0e1a!important;color:#a5b4fc!important;border:1px solid #2a2a4a!important;border-radius:8px!important;font-family:'Inter',sans-serif!important;font-size:.83rem!important;font-weight:500!important;padding:.55rem 1.4rem!important;transition:all .15s ease!important}
 .stButton>button:hover{background:rgba(99,102,241,.08)!important;border-color:rgba(99,102,241,.4)!important;color:#c4d0ff!important}
@@ -156,7 +254,7 @@ hr{border-color:#13132a!important;margin:1rem 0!important}
 
 .next-step{background:rgba(99,102,241,.05);border:1px solid rgba(99,102,241,.15);border-radius:8px;padding:.85rem 1.2rem;font-family:'Inter',sans-serif;font-size:.83rem;color:#8888cc;margin-top:1rem}
 .next-step strong{color:#a5b4fc}
-.sidebar-footer{position:fixed;bottom:1.2rem;font-family:'JetBrains Mono',monospace;font-size:.58rem;color:#1e1e3a;letter-spacing:1px}
+.sidebar-footer{position:fixed;bottom:1.2rem;font-family:'JetBrains Mono',monospace;font-size:.58rem;color:#2a2a4a;letter-spacing:1px}
 </style>
 """, unsafe_allow_html=True)
 
@@ -211,7 +309,7 @@ def render_complexity(cplx):
         <div class="cplx-note">{cplx.get('note','')}</div>
         <span class="chip">LR {cplx.get('lr_score','—')}</span>
         <span class="chip">LGB {cplx.get('lgb_score','—')}</span>
-        <span class="chip">→ {cplx.get('recommended','All models')}</span>
+        <span class="chip">-> {cplx.get('recommended','All models')}</span>
     </div>""", unsafe_allow_html=True)
 
 def render_col_table(profile):
@@ -223,10 +321,10 @@ def render_col_table(profile):
         miss  = stats.get("missing_pct", 0)
         mc    = "#f87171" if miss > 20 else "#4a4a6a" if miss > 0 else "#2a2a4a"
         if ctype == "numeric":
-            detail = f"μ={stats.get('mean','—')}  σ={stats.get('std','—')}  skew={stats.get('skew','—')}  [{stats.get('min','—')} … {stats.get('max','—')}]"
+            detail = f"mu={stats.get('mean','--')}  sigma={stats.get('std','--')}  skew={stats.get('skew','--')}  [{stats.get('min','--')} ... {stats.get('max','--')}]"
         elif ctype == "categorical":
             tops   = stats.get("top_values", {})
-            detail = f"{stats.get('n_unique','?')} unique → {' · '.join(list(tops.keys())[:3])}"
+            detail = f"{stats.get('n_unique','?')} unique -> {' · '.join(list(tops.keys())[:3])}"
         else:
             detail = stats.get("note", ctype)
         html += f"""
@@ -234,7 +332,7 @@ def render_col_table(profile):
             <div class="col-name" title="{col}">{col}</div>
             <div class="col-type-cell">{badge(ctype)}</div>
             <div class="col-stats">{detail}</div>
-            <div class="col-miss" style="color:{mc}">{"—" if miss == 0 else f"{miss:.1f}%"}</div>
+            <div class="col-miss" style="color:{mc}">{"--" if miss == 0 else f"{miss:.1f}%"}</div>
         </div>"""
     st.markdown(html + "</div>", unsafe_allow_html=True)
 
@@ -266,15 +364,53 @@ def sidebar_model_status(trainer):
         st.markdown('<div class="model-card-empty">NO MODEL LOADED</div>', unsafe_allow_html=True)
         return
     m = trainer.metrics
-    rows = [("MODEL",m.get("best_model","—")),("TARGET",trainer.target_col or "—"),
-            ("AUC",f"{m.get('test_roc_auc',0):.4f}"),("F1",f"{m.get('f1_score',0):.4f}"),
-            ("TIER",m.get("tier_label","—").split()[0])]
-    cplx = m.get("complexity",{})
-    if cplx: rows.append(("CPLX", cplx.get("complexity","—").upper()))
-    html = '<div class="model-card"><div style="font-family:\'JetBrains Mono\',monospace;font-size:.58rem;color:#6366f1;letter-spacing:2px;text-transform:uppercase;margin-bottom:.6rem">ACTIVE MODEL</div>'
-    for k,v in rows:
-        html += f'<div class="ms-row"><span class="ms-key">{k}</span><span class="ms-val">{v}</span></div>'
-    st.markdown(html + "</div>", unsafe_allow_html=True)
+    best_model = m.get("best_model", "--")
+    target     = trainer.target_col or "--"
+    auc        = f"{m.get('test_roc_auc', 0):.4f}"
+    f1         = f"{m.get('f1_score', 0):.4f}"
+    tier_raw   = m.get("tier_label", "--").split()[0]
+    cplx       = m.get("complexity", {})
+    cplx_val   = cplx.get("complexity", "--").upper() if cplx else "--"
+
+    # Colour-code AUC value
+    auc_float = m.get("test_roc_auc", 0)
+    auc_cls   = "ms-val-green" if auc_float >= 0.85 else "ms-val-amber" if auc_float >= 0.70 else "ms-val"
+
+    rows = [
+        ("MODEL",  best_model, "ms-val"),
+        ("TARGET", target,     "ms-val"),
+        ("AUC",    auc,        auc_cls),
+        ("F1",     f1,         "ms-val"),
+        ("TIER",   tier_raw,   "ms-val"),
+    ]
+    if cplx:
+        rows.append(("CPLX", cplx_val, "ms-val"))
+
+    html = '<div class="model-card"><div class="model-card-header">ACTIVE MODEL</div>'
+    for k, v, cls in rows:
+        html += f'<div class="ms-row"><span class="ms-key">{k}</span><span class="{cls}">{v}</span></div>'
+    html += "</div>"
+    st.markdown(html, unsafe_allow_html=True)
+
+def render_tier_legend():
+    """Redesigned tier legend — full-color names, readable range labels."""
+    tiers = [
+        ("#34d399", "TINY",    "< 1K"),
+        ("#34d399", "SMALL",   "1K-50K"),
+        ("#60a5fa", "MEDIUM",  "50K-200K"),
+        ("#fbbf24", "LARGE",   "200K-500K"),
+        ("#fb923c", "X-LARGE", "500K-2M"),
+        ("#f87171", "MASSIVE", "2M+"),
+    ]
+    rows = ""
+    for color, name, rng in tiers:
+        rows += f"""
+        <div class="tier-legend-row">
+            <div class="tier-dot" style="background:{color};box-shadow:0 0 5px {color}80"></div>
+            <span class="tier-name" style="color:{color}">{name}</span>
+            <span class="tier-range">{rng}</span>
+        </div>"""
+    st.markdown(f'<div class="tier-legend">{rows}</div>', unsafe_allow_html=True)
 
 def apply_plot_style(fig, ax_or_axes):
     fig.patch.set_facecolor("#0a0a0f")
@@ -297,32 +433,30 @@ def load_saved_model():
 with st.sidebar:
     st.markdown("""
     <div class="brand">
-        <div class="brand-logo">⬡</div>
+        <div class="brand-logo">&#x2B21;</div>
         <div><span class="brand-name">AutoML-X</span><span class="brand-ver">v7</span></div>
     </div>
-    <div style="font-family:'Inter',sans-serif;font-size:.75rem;color:#3a3a5c;
+    <div style="font-family:'Inter',sans-serif;font-size:.75rem;color:#4a4a6a;
                 margin-bottom:1rem;font-weight:300">Universal Binary Classifier</div>
     """, unsafe_allow_html=True)
 
     saved_trainer  = load_saved_model()
     active_trainer = st.session_state.get("u_trainer") or saved_trainer
     sidebar_model_status(active_trainer)
+
     st.markdown('<div class="nav-section">Navigation</div>', unsafe_allow_html=True)
-    page = st.radio("Navigation", ["01 — Upload","02 — Analyze","03 — Train",
-                                    "04 — Results","05 — Predict","06 — Batch"],
+    page = st.radio("Navigation", ["01 -- Upload","02 -- Analyze","03 -- Train",
+                                    "04 -- Results","05 -- Predict","06 -- Batch"],
                     label_visibility="collapsed")
-    st.markdown('<div class="nav-section" style="margin-top:2rem">Tier System</div>', unsafe_allow_html=True)
-    leg = ""
-    for color,name,rng in [("#34d399","TINY","< 1K"),("#34d399","SMALL","1K–50K"),
-                            ("#60a5fa","MEDIUM","50K–200K"),("#fbbf24","LARGE","200K–500K"),
-                            ("#fb923c","X-LARGE","500K–2M"),("#f87171","MASSIVE","2M+")]:
-        leg += f'<div style="display:flex;align-items:center;gap:8px;padding:3px 0"><div style="width:5px;height:5px;border-radius:50%;background:{color};flex-shrink:0"></div><span style="font-family:\'JetBrains Mono\',monospace;font-size:.62rem;color:{color}88">{name}</span><span style="font-family:\'JetBrains Mono\',monospace;font-size:.6rem;color:#2a2a4a;margin-left:auto">{rng}</span></div>'
-    st.markdown(leg, unsafe_allow_html=True)
+
+    st.markdown('<div class="nav-section" style="margin-top:1.8rem">Tier System</div>', unsafe_allow_html=True)
+    render_tier_legend()
+
     st.markdown('<div class="sidebar-footer">AutoML-X · HuggingFace Space</div>', unsafe_allow_html=True)
 
 # ── PAGE 01 — Upload ──────────────────────────────────────────────────────────
-if page == "01 — Upload":
-    ph("STEP 01 / 06","Upload Dataset","Drop any CSV — up to 2GB, any number of rows. Auto-cleaned before training.")
+if page == "01 -- Upload":
+    ph("STEP 01 / 06","Upload Dataset","Drop any CSV -- up to 2GB, any number of rows. Auto-cleaned before training.")
     uploaded = st.file_uploader("Drop your CSV here or click to browse", type=["csv"])
     if uploaded:
         file_mb = uploaded.size / 1e6; is_large = file_mb > 50
@@ -339,10 +473,10 @@ if page == "01 — Upload":
             max_rows = st.slider("Row limit",100_000,2_000_000,2_000_000,100_000,format="{:,}") if is_large else None
         with c2:
             encoding = st.selectbox("Encoding",["utf-8","latin-1","iso-8859-1","utf-16"],index=0)
-        if st.button("⬡ Load Dataset", type="primary", use_container_width=True):
+        if st.button("Load Dataset", type="primary", use_container_width=True):
             p2 = st.progress(0); ph2 = st.empty()
             try:
-                ph2.markdown('<div style="font-family:\'JetBrains Mono\',monospace;font-size:.75rem;color:#6366f1;padding:.5rem 0">Loading…</div>', unsafe_allow_html=True)
+                ph2.markdown('<div style="font-family:\'JetBrains Mono\',monospace;font-size:.75rem;color:#6366f1;padding:.5rem 0">Loading...</div>', unsafe_allow_html=True)
                 p2.progress(0.3)
                 df = load_csv_chunked(uploaded,max_rows=max_rows,chunk_size=100_000,encoding=encoding) if is_large else pd.read_csv(uploaded,encoding=encoding)
                 p2.progress(0.9)
@@ -378,10 +512,10 @@ if page == "01 — Upload":
             st.session_state["positive_label"] = None if pos_raw == "Auto-detect" else pos_raw
         if not ram["is_safe"]: st.warning(f"⚠️ {ram['warning']}")
         st.markdown(f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:.65rem;color:#3a3a5c;text-align:right;margin-top:.3rem">RAM: {ram["dataframe_gb"]:.3f} GB used · {ram["available_gb"]:.1f} GB free</div>', unsafe_allow_html=True)
-        st.markdown('<div class="next-step">→ Next: go to <strong>02 — Analyze</strong> to inspect data quality</div>', unsafe_allow_html=True)
+        st.markdown('<div class="next-step">-> Next: go to <strong>02 -- Analyze</strong> to inspect data quality</div>', unsafe_allow_html=True)
 
 # ── PAGE 02 — Analyze ─────────────────────────────────────────────────────────
-elif page == "02 — Analyze":
+elif page == "02 -- Analyze":
     ph("STEP 02 / 06","Dataset Analysis","Data quality scan, feature profiling, distributions and correlations.")
     if "df" not in st.session_state: st.warning("⚠️ Upload a dataset first."); st.stop()
     df = st.session_state["df"]; target_col = st.session_state.get("target_col", df.columns[-1])
@@ -406,8 +540,8 @@ elif page == "02 — Analyze":
         <div class="stat-card"><span class="stat-val stat-val-blue">{quality['n_info']}</span><span class="stat-lbl">Info</span></div>
     </div>""", unsafe_allow_html=True)
     render_quality_report(quality)
-    if st.button("⬡ Run Full Profile", type="primary", use_container_width=True):
-        with st.spinner("Profiling dataset…"):
+    if st.button("Run Full Profile", type="primary", use_container_width=True):
+        with st.spinner("Profiling dataset..."):
             try:
                 profile = DatasetProfiler().profile(df, target_col)
                 st.session_state["profile"] = profile
@@ -429,7 +563,7 @@ elif page == "02 — Analyze":
             class_df["Pct"] = (class_df["Count"]/class_df["Count"].sum()*100).round(2)
             st.dataframe(class_df, use_container_width=True)
             if profile["is_imbalanced"]:
-                st.markdown(f'<div class="info-panel-warn" style="margin-top:.5rem"><span style="font-family:\'JetBrains Mono\',monospace;font-size:.72rem;color:#fbbf24">△ Imbalanced — minority {profile["minority_ratio"]*100:.1f}%<br><span style="color:#6b6b8a">class_weight=\'balanced\' applied</span></span></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="info-panel-warn" style="margin-top:.5rem"><span style="font-family:\'JetBrains Mono\',monospace;font-size:.72rem;color:#fbbf24">△ Imbalanced -- minority {profile["minority_ratio"]*100:.1f}%<br><span style="color:#6b6b8a">class_weight=\'balanced\' applied</span></span></div>', unsafe_allow_html=True)
             else:
                 st.markdown('<div class="info-panel-success" style="margin-top:.5rem"><span style="font-family:\'JetBrains Mono\',monospace;font-size:.72rem;color:#34d399">✓ Balanced classes</span></div>', unsafe_allow_html=True)
         with tc2:
@@ -446,7 +580,7 @@ elif page == "02 — Analyze":
                 st.pyplot(fig); plt.close()
             except: pass
         if profile.get("high_corr_pairs"):
-            sec("⚠ High Correlations ( > 0.95 )")
+            sec("High Correlations ( > 0.95 )")
             st.dataframe(pd.DataFrame(profile["high_corr_pairs"],columns=["Feature A","Feature B","Correlation"]),use_container_width=True,hide_index=True)
         sec("Column Profile"); render_col_table(profile)
         num_cols = profile["numeric_cols"]
@@ -465,7 +599,7 @@ elif page == "02 — Analyze":
             st.pyplot(fig); plt.close()
 
 # ── PAGE 03 — Train ───────────────────────────────────────────────────────────
-elif page == "03 — Train":
+elif page == "03 -- Train":
     ph("STEP 03 / 06","Train Model","AutoML selects the best algorithm for your dataset size and complexity.")
     if "df" not in st.session_state: st.warning("⚠️ Upload a dataset first."); st.stop()
     df = st.session_state["df"]; target_col = st.session_state.get("target_col")
@@ -489,14 +623,14 @@ elif page == "03 — Train":
         <span style="font-family:'JetBrains Mono',monospace;font-size:.62rem;color:#3a3a5c;letter-spacing:1px">AUTO STRATEGY</span>
         <div style="font-family:'JetBrains Mono',monospace;font-size:.78rem;color:#a5b4fc;margin-top:4px">{strategies[tier]}</div>
     </div>""", unsafe_allow_html=True)
-    if st.button("⬡ Start Training", type="primary", use_container_width=True):
+    if st.button("Start Training", type="primary", use_container_width=True):
         prog = st.progress(0); log_ph = st.empty(); log_lines = []
         def on_progress(step, total, msg):
             prog.progress(step/total); log_lines.append((step,total,msg))
             html = '<div class="log-terminal">'
             for s,t,m in log_lines[-14:]:
                 cls = "log-active" if s==log_lines[-1][0] else "log-done"
-                html += f'<div class="{cls}">{"→" if cls=="log-active" else "✓"} [{s}/{t}] {m}</div>'
+                html += f'<div class="{cls}">{"-->" if cls=="log-active" else "✓"} [{s}/{t}] {m}</div>'
             log_ph.markdown(html+"</div>", unsafe_allow_html=True)
         try:
             trainer = UniversalTrainer(model_save_path="models/universal_model.pkl")
@@ -516,25 +650,25 @@ elif page == "03 — Train":
                 </div></div>""", unsafe_allow_html=True)
             cr = metrics.get("cleaning_report",{})
             if cr and cr.get("changes"):
-                with st.expander(f"Data Cleaning Report — {len(cr['changes'])} actions"):
+                with st.expander(f"Data Cleaning Report -- {len(cr['changes'])} actions"):
                     for ch in cr["changes"]: st.markdown(f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:.72rem;color:#6b6b8a;padding:2px 0">✓ {ch}</div>', unsafe_allow_html=True)
             dropped = metrics.get("dropped_cols",[])
-            if dropped: st.markdown(f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:.7rem;color:#3a3a5c;margin-top:.5rem">Dropped {len(dropped)} col(s): {", ".join(f"`{c}`" for c in dropped[:8])}{"…" if len(dropped)>8 else ""}</div>', unsafe_allow_html=True)
-            st.markdown('<div class="next-step">→ Go to <strong>04 — Results</strong> for full performance breakdown</div>', unsafe_allow_html=True)
+            if dropped: st.markdown(f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:.7rem;color:#3a3a5c;margin-top:.5rem">Dropped {len(dropped)} col(s): {", ".join(f"`{c}`" for c in dropped[:8])}{"..." if len(dropped)>8 else ""}</div>', unsafe_allow_html=True)
+            st.markdown('<div class="next-step">-> Go to <strong>04 -- Results</strong> for full performance breakdown</div>', unsafe_allow_html=True)
         except Exception as e:
             prog.empty(); log_ph.empty(); st.error(f"Training failed: {e}")
             import traceback
             with st.expander("Traceback"): st.code(traceback.format_exc())
 
 # ── PAGE 04 — Results ─────────────────────────────────────────────────────────
-elif page == "04 — Results":
+elif page == "04 -- Results":
     ph("STEP 04 / 06","Results","Model performance, leaderboard, confusion matrix and training details.")
     trainer = st.session_state.get("u_trainer") or load_saved_model()
     if trainer is None: st.warning("⚠️ No trained model found."); st.stop()
     m = trainer.metrics; render_tier(m.get("tier",0), m.get("n_rows_total"))
     sec("Performance")
     st.markdown(f"""<div class="stat-row stat-row-5" style="margin-bottom:1.5rem">
-        <div class="stat-card"><span class="stat-val stat-val-green" style="font-size:1.1rem;padding-top:.3rem">{m.get('best_model','—')}</span><span class="stat-lbl">Winner</span></div>
+        <div class="stat-card"><span class="stat-val stat-val-green" style="font-size:1.1rem;padding-top:.3rem">{m.get('best_model','--')}</span><span class="stat-lbl">Winner</span></div>
         <div class="stat-card"><span class="stat-val">{m.get('cv_roc_auc',0):.5f}</span><span class="stat-lbl">CV ROC-AUC</span></div>
         <div class="stat-card"><span class="stat-val">{m.get('test_roc_auc',0):.5f}</span><span class="stat-lbl">Test ROC-AUC</span></div>
         <div class="stat-card"><span class="stat-val">{m.get('f1_score',0):.5f}</span><span class="stat-lbl">F1 Score</span></div>
@@ -578,22 +712,22 @@ elif page == "04 — Results":
     except: st.markdown(f"TP:`{tp}` TN:`{tn}` FP:`{fp}` FN:`{fn}`")
     sec("Training Info")
     st.markdown(f"""<div class="info-panel"><div class="stat-row stat-row-4">
-        <div><div style="font-family:'JetBrains Mono',monospace;font-size:.6rem;color:#3a3a5c;text-transform:uppercase;letter-spacing:1.5px">Strategy</div><div style="font-family:'JetBrains Mono',monospace;font-size:.75rem;color:#a5b4fc;margin-top:4px">{m.get('tier_strategy','—')}</div></div>
+        <div><div style="font-family:'JetBrains Mono',monospace;font-size:.6rem;color:#3a3a5c;text-transform:uppercase;letter-spacing:1.5px">Strategy</div><div style="font-family:'JetBrains Mono',monospace;font-size:.75rem;color:#a5b4fc;margin-top:4px">{m.get('tier_strategy','--')}</div></div>
         <div><div style="font-family:'JetBrains Mono',monospace;font-size:.6rem;color:#3a3a5c;text-transform:uppercase;letter-spacing:1.5px">Train rows</div><div style="font-family:'JetBrains Mono',monospace;font-size:.75rem;color:#a5b4fc;margin-top:4px">{m.get('n_train',0):,}</div></div>
         <div><div style="font-family:'JetBrains Mono',monospace;font-size:.6rem;color:#3a3a5c;text-transform:uppercase;letter-spacing:1.5px">Val rows</div><div style="font-family:'JetBrains Mono',monospace;font-size:.75rem;color:#a5b4fc;margin-top:4px">{m.get('n_val',0):,}</div></div>
         <div><div style="font-family:'JetBrains Mono',monospace;font-size:.6rem;color:#3a3a5c;text-transform:uppercase;letter-spacing:1.5px">Total rows</div><div style="font-family:'JetBrains Mono',monospace;font-size:.75rem;color:#a5b4fc;margin-top:4px">{m.get('n_rows_total',0):,}</div></div>
     </div></div>""", unsafe_allow_html=True)
     cr = m.get("cleaning_report",{})
     if cr and cr.get("changes"):
-        with st.expander(f"Data Cleaning Report — {len(cr['changes'])} action(s)"):
+        with st.expander(f"Data Cleaning Report -- {len(cr['changes'])} action(s)"):
             for ch in cr["changes"]: st.markdown(f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:.72rem;color:#6b6b8a;padding:2px 0">✓ {ch}</div>', unsafe_allow_html=True)
     sec("Export")
     if os.path.exists("models/universal_model.pkl"):
         with open("models/universal_model.pkl","rb") as f:
-            st.download_button("⬇ Download Model (.pkl)",f,"universal_model.pkl","application/octet-stream",use_container_width=True)
+            st.download_button("Download Model (.pkl)",f,"universal_model.pkl","application/octet-stream",use_container_width=True)
 
 # ── PAGE 05 — Predict ─────────────────────────────────────────────────────────
-elif page == "05 — Predict":
+elif page == "05 -- Predict":
     ph("STEP 05 / 06","Single Prediction","Fill in feature values and get an instant probability score.")
     trainer = st.session_state.get("u_trainer") or load_saved_model()
     if trainer is None: st.warning("⚠️ Train a model first."); st.stop()
@@ -616,7 +750,7 @@ elif page == "05 — Predict":
             else:
                 input_vals[feat] = st.number_input(feat,value=0.0,key=f"f_{feat}")
     st.markdown("")
-    if st.button("⬡ Run Prediction", type="primary", use_container_width=True):
+    if st.button("Run Prediction", type="primary", use_container_width=True):
         try:
             prob = float(trainer.predict_proba(pd.DataFrame([input_vals]))[0])
             pred = int(prob >= trainer.threshold); t = trainer.threshold
@@ -638,7 +772,7 @@ elif page == "05 — Predict":
         except Exception as e: st.error(f"Prediction failed: {e}")
 
 # ── PAGE 06 — Batch ───────────────────────────────────────────────────────────
-elif page == "06 — Batch":
+elif page == "06 -- Batch":
     ph("STEP 06 / 06","Batch Prediction","Score a full CSV file. Chunked inference handles any size.")
     trainer = st.session_state.get("u_trainer") or load_saved_model()
     if trainer is None: st.warning("⚠️ Train a model first."); st.stop()
@@ -653,14 +787,14 @@ elif page == "06 — Batch":
     if uploaded:
         file_mb = uploaded.size/1e6; is_large = file_mb > 50
         if is_large:
-            st.markdown(f'<div class="info-panel-warn"><span style="font-family:\'JetBrains Mono\',monospace;font-size:.72rem;color:#fbbf24">△ Large file ({file_mb:.0f} MB) — chunked loader active</span></div>', unsafe_allow_html=True)
-            with st.spinner("Loading…"): df_new = load_csv_chunked(uploaded,max_rows=None,chunk_size=100_000)
+            st.markdown(f'<div class="info-panel-warn"><span style="font-family:\'JetBrains Mono\',monospace;font-size:.72rem;color:#fbbf24">△ Large file ({file_mb:.0f} MB) -- chunked loader active</span></div>', unsafe_allow_html=True)
+            with st.spinner("Loading..."): df_new = load_csv_chunked(uploaded,max_rows=None,chunk_size=100_000)
         else: df_new = pd.read_csv(uploaded)
         render_tier(get_tier(len(df_new)), len(df_new))
         st.markdown(f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:.72rem;color:#34d399;margin-bottom:.8rem">✓ Loaded {len(df_new):,} rows</div>', unsafe_allow_html=True)
         X_raw = df_new.drop(columns=[trainer.target_col],errors="ignore")
-        if st.button("⬡ Run Batch Prediction", type="primary", use_container_width=True):
-            with st.spinner(f"Scoring {len(X_raw):,} rows…"):
+        if st.button("Run Batch Prediction", type="primary", use_container_width=True):
+            with st.spinner(f"Scoring {len(X_raw):,} rows..."):
                 try:
                     probs = trainer.predict_proba(X_raw); preds = (probs>=trainer.threshold).astype(int)
                     results = df_new.copy(); results["probability"]=(probs*100).round(4)
@@ -680,5 +814,5 @@ elif page == "06 — Batch":
                         apply_plot_style(fig,ax); fig.tight_layout(pad=.5); st.pyplot(fig); plt.close()
                     except: pass
                     st.dataframe(results.head(200), use_container_width=True)
-                    st.download_button("⬇ Download Predictions CSV",results.to_csv(index=False).encode(),"automlx_predictions.csv","text/csv",use_container_width=True)
+                    st.download_button("Download Predictions CSV",results.to_csv(index=False).encode(),"automlx_predictions.csv","text/csv",use_container_width=True)
                 except Exception as e: st.error(f"Batch prediction failed: {e}")
