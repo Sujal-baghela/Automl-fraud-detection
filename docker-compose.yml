@@ -1,11 +1,9 @@
-version: "3.9"
-
 # ══════════════════════════════════════════════════════════════════
 # docker-compose.yml  —  LOCAL DEVELOPMENT
 #
 # Services:
-#   fraud      →  http://localhost:8501   (Fraud Detection — local only)
-#   universal  →  http://localhost:8502   (Universal Trainer — mirrors HF)
+#   fraud      →  http://localhost:8501   (Fraud Detection)
+#   universal  →  http://localhost:8502   (Universal Trainer)
 #
 # Usage:
 #   docker compose up --build            # start both
@@ -24,25 +22,25 @@ services:
     container_name: automl-x-fraud
 
     ports:
-      - "8501:8501"       # http://localhost:8501
+      - "8501:8501"
 
     volumes:
-      - ./models:/app/models       # live model reload without rebuild
+      - ./models:/app/models
+      - ./Data:/app/Data
       - ./reports:/app/reports
       - ./logs:/app/logs
-      - ./src:/app/src              # hot-reload source code
+      - ./src:/app/src
 
     environment:
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
-      - STREAMLIT_APP=app_fraud_local.py
-      - STREAMLIT_PORT=8501
 
     command: >
       streamlit run app_fraud_local.py
         --server.port=8501
         --server.address=0.0.0.0
         --server.headless=true
+        --server.maxUploadSize=2048
         --browser.gatherUsageStats=false
         --server.fileWatcherType=auto
 
@@ -54,9 +52,9 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 20s
+      start_period: 40s
 
-  # ── Universal Trainer (mirrors HF Space — runs locally too) ──────
+  # ── Universal Trainer (mirrors HF Space) ─────────────────────────
   universal:
     build:
       context: .
@@ -65,10 +63,11 @@ services:
     container_name: automl-x-universal
 
     ports:
-      - "8502:8502"       # http://localhost:8502
+      - "8502:8502"
 
     volumes:
       - ./models:/app/models
+      - ./Data:/app/Data
       - ./reports:/app/reports
       - ./logs:/app/logs
       - ./src:/app/src
@@ -76,14 +75,13 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
-      - STREAMLIT_APP=app_universal.py
-      - STREAMLIT_PORT=8502
 
     command: >
       streamlit run app_universal.py
         --server.port=8502
         --server.address=0.0.0.0
         --server.headless=true
+        --server.maxUploadSize=2048
         --browser.gatherUsageStats=false
         --server.fileWatcherType=auto
 
@@ -95,4 +93,4 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 20s
+      start_period: 40s

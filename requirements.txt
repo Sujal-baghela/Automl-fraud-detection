@@ -1,28 +1,14 @@
 # ══════════════════════════════════════════════════════════════
-# requirements.txt
-#
-# Works for both:
-#   • HuggingFace Space  (app_universal.py)
-#   • Local development  (app_fraud_local.py + app_universal.py)
-#
-# FastAPI/uvicorn kept for local API server (docker-compose api).
+# requirements.txt  —  AutoML-X v6.0
+# HuggingFace Space + Local (app_universal.py + app_fraud_local.py)
 # ══════════════════════════════════════════════════════════════
-
-# ── Web framework (local API only) ───────────────────────────
-fastapi==0.129.0
-uvicorn==0.41.0
-pydantic==2.12.5
-starlette==0.52.1
-httpx
-python-multipart
 
 # ── ML core ──────────────────────────────────────────────────
 scikit-learn==1.6.1
 lightgbm==4.6.0
 xgboost==2.1.4
-shap==0.46.0
-imbalanced-learn
 joblib==1.4.2
+shap==0.46.0
 
 # ── Data ─────────────────────────────────────────────────────
 numpy==1.26.4
@@ -30,15 +16,11 @@ pandas==2.2.3
 scipy==1.13.1
 
 # ── Visualisation ────────────────────────────────────────────
-matplotlib
-seaborn
+matplotlib==3.9.4
 
-# ── Streamlit ────────────────────────────────────────────────
+# ── Streamlit + its own deps ─────────────────────────────────
 streamlit>=1.44.0
 altair>=5.5.0
 
-# ── Monitoring / utils ────────────────────────────────────────
+# ── System utils ─────────────────────────────────────────────
 psutil
-mlflow
-cloudpickle
-tqdm

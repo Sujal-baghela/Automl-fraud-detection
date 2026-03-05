@@ -1,7 +1,7 @@
 """
-universal_trainer.py  ·  AutoML-X v5.0
+universal_trainer.py  ·  AutoML-X v6.0
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Handles ANY dataset size end-to-end:
+Handles ANY dataset size, ANY data quality, end-to-end:
 
   Tier 0  Tiny    :     0 – 1 000 rows  → All 4 models · 5-fold CV · no sampling
   Tier 1  Small   :  1K  – 50K  rows   → All 4 models · 5-fold CV
@@ -10,10 +10,18 @@ Handles ANY dataset size end-to-end:
   Tier 4  XLarge  :  500K–2M   rows   → LGB+LR only  · 2-fold CV on 200K sample
   Tier 5  Massive :  2M+       rows   → LGB only     · no CV · direct 80/20 split
                                          chunked predict for inference
+
+New in v6.0:
+  - SmartDataCleaner: handles outliers, constant cols, duplicate rows,
+    mixed types, whitespace in strings, boolean coercion, numeric-string cols
+  - DataQualityReport: detailed pre/post cleaning report
+  - Improved ColumnTypeDetector: handles numeric-string cols like "1,234"
+  - Better error messages with actionable advice
 """
 
 import os
 import gc
+import re
 import logging
 import warnings
 import numpy as np
@@ -115,17 +123,11 @@ def check_ram_safety(df: pd.DataFrame) -> dict:
 
 def load_csv_chunked(
     file_obj,
-    max_rows: int = None,          # None = load everything (up to RAM limit)
+    max_rows: int = None,
     chunk_size: int = 100_000,
     target_col: str = None,
     progress_callback=None
 ) -> pd.DataFrame:
-    """
-    Stream any CSV in chunks. Never crashes on large files.
-    - Stops early if RAM drops below 300 MB.
-    - Stratified-samples if file exceeds max_rows.
-    - Returns clean DataFrame ready for training.
-    """
     chunks     = []
     total_rows = 0
     chunk_num  = 0
@@ -164,7 +166,6 @@ def load_csv_chunked(
             f"Concatenated {len(df):,} rows · {df.shape[1]} cols  [{tier_lbl}]"
         )
 
-    # Stratified downsample only when caller supplies a hard limit
     if max_rows and len(df) > max_rows:
         if progress_callback:
             progress_callback(
@@ -192,6 +193,332 @@ def load_csv_chunked(
         )
 
     return df
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SMART DATA CLEANER  (NEW in v6.0)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class SmartDataCleaner:
+    """
+    Automatically cleans messy raw data before training.
+    Handles: duplicates, constant columns, numeric-string coercion,
+    boolean coercion, whitespace stripping, outlier capping,
+    mixed-type columns, and high-missing columns.
+    """
+
+    def __init__(
+        self,
+        outlier_method: str = "iqr",   # "iqr" | "zscore" | "none"
+        outlier_threshold: float = 3.0,
+        missing_drop_threshold: float = 0.95,  # drop col if >95% missing
+        min_unique_ratio: float = 0.0,          # drop constant cols
+    ):
+        self.outlier_method          = outlier_method
+        self.outlier_threshold       = outlier_threshold
+        self.missing_drop_threshold  = missing_drop_threshold
+        self.min_unique_ratio        = min_unique_ratio
+        self.report: dict            = {}
+
+    @staticmethod
+    def _is_string_col(series: pd.Series) -> bool:
+        """True for both legacy object dtype and pandas 2.2+ StringDtype."""
+        return series.dtype == object or pd.api.types.is_string_dtype(series)
+
+    def clean(self, df: pd.DataFrame, target_col: str = None) -> tuple:
+        """
+        Returns (cleaned_df, report_dict).
+        report_dict keys: duplicates_removed, constant_cols_dropped,
+        high_missing_cols_dropped, numeric_strings_coerced,
+        bool_cols_coerced, whitespace_stripped, outliers_capped,
+        rows_before, rows_after, cols_before, cols_after, changes
+        """
+        report = {
+            "rows_before": len(df),
+            "cols_before": df.shape[1],
+            "changes": [],
+        }
+        df = df.copy()
+
+        # 1. Strip column name whitespace
+        df.columns = [str(c).strip() for c in df.columns]
+
+        # 2. Remove duplicate rows
+        n_before = len(df)
+        df = df.drop_duplicates()
+        n_dup = n_before - len(df)
+        if n_dup > 0:
+            report["changes"].append(f"Removed {n_dup:,} duplicate rows")
+        report["duplicates_removed"] = n_dup
+
+        # 3. Drop columns with >threshold% missing (excluding target)
+        high_missing = []
+        for col in df.columns:
+            if col == target_col:
+                continue
+            miss_rate = df[col].isnull().mean()
+            if miss_rate > self.missing_drop_threshold:
+                high_missing.append(col)
+        if high_missing:
+            df = df.drop(columns=high_missing)
+            report["changes"].append(
+                f"Dropped {len(high_missing)} cols with >{self.missing_drop_threshold*100:.0f}% missing: "
+                f"{', '.join(high_missing[:5])}{'…' if len(high_missing) > 5 else ''}"
+            )
+        report["high_missing_cols_dropped"] = high_missing
+
+        # 4. Drop constant columns (single unique value)
+        constant_cols = []
+        for col in df.columns:
+            if col == target_col:
+                continue
+            n_unique = df[col].nunique(dropna=True)
+            if n_unique <= 1:
+                constant_cols.append(col)
+        if constant_cols:
+            df = df.drop(columns=constant_cols)
+            report["changes"].append(
+                f"Dropped {len(constant_cols)} constant cols: "
+                f"{', '.join(constant_cols[:5])}{'…' if len(constant_cols) > 5 else ''}"
+            )
+        report["constant_cols_dropped"] = constant_cols
+
+        # 5. Boolean coercion (yes/no, true/false, y/n → 1/0)
+        bool_map = {
+            "yes": 1, "no": 0, "true": 1, "false": 0,
+            "y": 1, "n": 0, "t": 1, "f": 0,
+            "1": 1, "0": 0, "1.0": 1, "0.0": 0,
+        }
+        bool_coerced = []
+        for col in df.columns:
+            if col == target_col:
+                continue
+            if self._is_string_col(df[col]):
+                sample = df[col].dropna().astype(str).str.lower().unique()
+                if set(sample).issubset(set(bool_map.keys())) and len(sample) <= 4:
+                    df[col] = df[col].astype(str).str.lower().map(bool_map)
+                    bool_coerced.append(col)
+        if bool_coerced:
+            report["changes"].append(
+                f"Coerced {len(bool_coerced)} boolean cols (yes/no→1/0): "
+                f"{', '.join(bool_coerced[:5])}"
+            )
+        report["bool_cols_coerced"] = bool_coerced
+
+        # 6. Numeric-string coercion (e.g. "1,234" → 1234, "$5.00" → 5.0)
+        numeric_coerced = []
+        for col in df.columns:
+            if col == target_col:
+                continue
+            if self._is_string_col(df[col]):
+                sample = df[col].dropna().head(200).astype(str)
+                cleaned = sample.str.replace(r"[$,€£¥%\s]", "", regex=True)
+                try:
+                    converted = pd.to_numeric(cleaned, errors="coerce")
+                    success_rate = converted.notna().mean()
+                    if success_rate >= 0.85:
+                        df[col] = (
+                            df[col].astype(str)
+                            .str.replace(r"[$,€£¥%\s]", "", regex=True)
+                        )
+                        df[col] = pd.to_numeric(df[col], errors="coerce")
+                        numeric_coerced.append(col)
+                except Exception:
+                    pass
+        if numeric_coerced:
+            report["changes"].append(
+                f"Coerced {len(numeric_coerced)} numeric-string cols (e.g. '$1,234'→1234): "
+                f"{', '.join(numeric_coerced[:5])}"
+            )
+        report["numeric_strings_coerced"] = numeric_coerced
+
+        # 7. Strip whitespace from string columns
+        ws_stripped = []
+        for col in df.columns:
+            if col == target_col:
+                continue
+            if self._is_string_col(df[col]):
+                before = df[col].astype(str).str.strip()
+                if not (before == df[col].astype(str)).all():
+                    df[col] = df[col].astype(str).str.strip()
+                    ws_stripped.append(col)
+        if ws_stripped:
+            report["changes"].append(
+                f"Stripped whitespace from {len(ws_stripped)} string cols"
+            )
+        report["whitespace_stripped"] = ws_stripped
+
+        # 8. Outlier capping (numeric cols only, excluding target)
+        outlier_capped = []
+        if self.outlier_method != "none":
+            num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+            if target_col in num_cols:
+                num_cols.remove(target_col)
+            for col in num_cols:
+                s = df[col].dropna()
+                if len(s) < 10:
+                    continue
+                try:
+                    if self.outlier_method == "iqr":
+                        q1, q3 = s.quantile(0.25), s.quantile(0.75)
+                        iqr = q3 - q1
+                        if iqr == 0:
+                            continue
+                        lo = q1 - self.outlier_threshold * iqr
+                        hi = q3 + self.outlier_threshold * iqr
+                    else:  # zscore
+                        mu, sigma = s.mean(), s.std()
+                        if sigma == 0:
+                            continue
+                        lo = mu - self.outlier_threshold * sigma
+                        hi = mu + self.outlier_threshold * sigma
+                    n_out = ((df[col] < lo) | (df[col] > hi)).sum()
+                    if n_out > 0:
+                        df[col] = df[col].clip(lower=lo, upper=hi)
+                        outlier_capped.append(f"{col}({n_out})")
+                except Exception:
+                    pass
+            if outlier_capped:
+                report["changes"].append(
+                    f"Capped outliers in {len(outlier_capped)} numeric cols "
+                    f"(method={self.outlier_method}, threshold={self.outlier_threshold})"
+                )
+        report["outliers_capped"] = outlier_capped
+
+        report["rows_after"] = len(df)
+        report["cols_after"] = df.shape[1]
+        self.report = report
+        return df, report
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DATA QUALITY REPORT  (NEW in v6.0)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class DataQualityReport:
+    """Generates a pre-cleaning quality assessment."""
+
+    def assess(self, df: pd.DataFrame, target_col: str = None) -> dict:
+        issues = []
+        warnings_list = []
+        info_list = []
+
+        n_rows, n_cols = df.shape
+
+        # Duplicate rows
+        n_dup = df.duplicated().sum()
+        if n_dup > 0:
+            issues.append({
+                "type": "duplicates",
+                "severity": "warning",
+                "message": f"{n_dup:,} duplicate rows ({n_dup/n_rows*100:.1f}%) — will be removed",
+                "count": int(n_dup),
+            })
+
+        # Missing values per column
+        miss_counts = df.isnull().sum()
+        high_miss   = miss_counts[miss_counts / n_rows > 0.3]
+        for col, cnt in high_miss.items():
+            if col == target_col:
+                continue
+            pct = cnt / n_rows * 100
+            sev = "error" if pct > 70 else "warning"
+            issues.append({
+                "type": "high_missing",
+                "severity": sev,
+                "message": f"'{col}': {pct:.1f}% missing values",
+                "count": int(cnt),
+                "col": col,
+            })
+
+        # Constant columns
+        for col in df.columns:
+            if col == target_col:
+                continue
+            if df[col].nunique(dropna=True) <= 1:
+                issues.append({
+                    "type": "constant_col",
+                    "severity": "warning",
+                    "message": f"'{col}' has only 1 unique value — will be dropped",
+                    "col": col,
+                })
+
+        # Possible numeric-string columns
+        str_cols = [c for c in df.columns
+                    if df[c].dtype == object or pd.api.types.is_string_dtype(df[c])]
+        for col in str_cols:
+            if col == target_col:
+                continue
+            sample = df[col].dropna().head(100).astype(str)
+            cleaned = sample.str.replace(r"[$,€£¥%\s]", "", regex=True)
+            try:
+                conv = pd.to_numeric(cleaned, errors="coerce")
+                if conv.notna().mean() >= 0.85:
+                    info_list.append({
+                        "type": "numeric_string",
+                        "severity": "info",
+                        "message": f"'{col}' looks numeric but stored as string — will be coerced",
+                        "col": col,
+                    })
+            except Exception:
+                pass
+
+        # Target column issues
+        if target_col and target_col in df.columns:
+            n_target_miss = df[target_col].isnull().sum()
+            if n_target_miss > 0:
+                issues.append({
+                    "type": "target_missing",
+                    "severity": "error",
+                    "message": f"Target '{target_col}' has {n_target_miss:,} missing values — rows will be dropped",
+                    "count": int(n_target_miss),
+                })
+            n_classes = df[target_col].nunique()
+            if n_classes > 2:
+                issues.append({
+                    "type": "multiclass",
+                    "severity": "error",
+                    "message": f"Target '{target_col}' has {n_classes} classes — only binary supported",
+                    "count": n_classes,
+                })
+            elif n_classes == 1:
+                issues.append({
+                    "type": "single_class",
+                    "severity": "error",
+                    "message": f"Target '{target_col}' has only 1 class — cannot train",
+                })
+
+        # High cardinality categoricals
+        for col in str_cols:
+            if col == target_col:
+                continue
+            n_unique = df[col].nunique()
+            if n_unique > 50 and n_unique / n_rows < 0.5:
+                warnings_list.append({
+                    "type": "high_cardinality",
+                    "severity": "warning",
+                    "message": f"'{col}' has {n_unique} unique values — may slow training",
+                    "col": col,
+                })
+
+        all_issues = issues + warnings_list + info_list
+        n_errors   = sum(1 for x in all_issues if x["severity"] == "error")
+        n_warnings = sum(1 for x in all_issues if x["severity"] == "warning")
+        n_info     = sum(1 for x in all_issues if x["severity"] == "info")
+
+        return {
+            "issues":        all_issues,
+            "n_errors":      n_errors,
+            "n_warnings":    n_warnings,
+            "n_info":        n_info,
+            "has_blockers":  n_errors > 0,
+            "overall_quality": (
+                "poor"   if n_errors > 0 else
+                "fair"   if n_warnings > 3 else
+                "good"   if n_warnings > 0 else
+                "excellent"
+            ),
+        }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -232,13 +559,16 @@ class ColumnTypeDetector:
             n_unique = series.nunique()
             dtype    = series.dtype
 
-            is_id_name       = any(p in col_lower for p in self.ID_PATTERNS)
+            is_id_name = any(p in col_lower for p in self.ID_PATTERNS)
+
+            # Only flag INT columns as ID by cardinality — never float columns
+            # (continuous float features naturally have near-100% unique values)
             is_high_card_int = (
-                dtype in [np.int64, np.int32, np.float64] and
+                dtype in [np.int64, np.int32] and
                 n_unique > min(0.9 * n_rows, 10_000)
             )
             is_high_card_str = (
-                dtype == object and
+                (dtype == object or pd.api.types.is_string_dtype(series)) and
                 n_unique / max(n_rows, 1) > self.HIGH_CARD_RATIO and
                 n_unique > 100
             )
@@ -254,7 +584,7 @@ class ColumnTypeDetector:
                 date_cols.append(col)
                 continue
 
-            if dtype == object:
+            if dtype == object or pd.api.types.is_string_dtype(series):
                 try:
                     pd.to_datetime(series.head(50), infer_datetime_format=True,
                                    errors="raise")
@@ -361,7 +691,6 @@ class DatasetProfiler:
         minority_ratio = class_counts.min() / max(len(y), 1)
         missing_pct    = round(X.isnull().sum().sum() / max(X.size, 1) * 100, 2)
 
-        # Per-column stats on a sample (fast on huge datasets)
         sample_df = df.sample(min(50_000, len(df)), random_state=42)
         col_stats = {}
 
@@ -399,7 +728,6 @@ class DatasetProfiler:
             col_stats[col] = {"type": "text",
                               "note": "Detected as free text — will be dropped"}
 
-        # High-correlation check
         high_corr_pairs = []
         if len(num_cols) >= 2:
             try:
@@ -417,6 +745,10 @@ class DatasetProfiler:
         n_rows = len(df)
         tier   = get_tier(n_rows)
 
+        # Data quality report
+        dqr = DataQualityReport()
+        quality = dqr.assess(df, target_col)
+
         return {
             "n_rows":            n_rows,
             "n_cols":            len(X.columns),
@@ -433,7 +765,7 @@ class DatasetProfiler:
             "id_cols":           id_cols,
             "date_cols":         date_cols,
             "text_cols":         text_cols,
-            "high_cardinality_cols": id_cols,   # backward compat
+            "high_cardinality_cols": id_cols,
             "target_col":        target_col,
             "n_classes":         n_classes,
             "class_counts":      class_counts.to_dict(),
@@ -445,6 +777,7 @@ class DatasetProfiler:
             "col_stats":         col_stats,
             "size_gb":           round(get_dataframe_ram_gb(df), 3),
             "needs_sampling":    n_rows > 500_000,
+            "quality_report":    quality,
         }
 
 
@@ -474,12 +807,9 @@ def build_preprocessor(num_cols: list, cat_cols: list) -> ColumnTransformer:
 # TIER-AWARE MODEL + CV FACTORY
 # ─────────────────────────────────────────────────────────────────────────────
 
-def get_models_for_tier(tier: int, is_imbalanced: bool,
-                        complexity: str) -> dict:
+def get_models_for_tier(tier: int, is_imbalanced: bool, complexity: str) -> dict:
     bal  = is_imbalanced
-    nonl = complexity in ("nonlinear", "mixed", "unknown")
 
-    # ── Tier 0 & 1: Tiny / Small ─────────────────────────────────────────────
     if tier <= TIER_SMALL:
         return {
             "LogisticRegression": LogisticRegression(
@@ -495,7 +825,6 @@ def get_models_for_tier(tier: int, is_imbalanced: bool,
                 eval_metric="auc", verbosity=0),
         }
 
-    # ── Tier 2: Medium ────────────────────────────────────────────────────────
     if tier == TIER_MEDIUM:
         return {
             "LogisticRegression": LogisticRegression(
@@ -511,7 +840,6 @@ def get_models_for_tier(tier: int, is_imbalanced: bool,
                 eval_metric="auc", verbosity=0),
         }
 
-    # ── Tier 3: Large ─────────────────────────────────────────────────────────
     if tier == TIER_LARGE:
         return {
             "LogisticRegression": LogisticRegression(
@@ -524,7 +852,6 @@ def get_models_for_tier(tier: int, is_imbalanced: bool,
                 eval_metric="auc", verbosity=0, tree_method="hist"),
         }
 
-    # ── Tier 4: XLarge (500K–2M) ─────────────────────────────────────────────
     if tier == TIER_XLARGE:
         return {
             "LightGBM": LGBMClassifier(
@@ -536,7 +863,6 @@ def get_models_for_tier(tier: int, is_imbalanced: bool,
                 solver="saga", n_jobs=-1),
         }
 
-    # ── Tier 5: Massive (2M+) ─────────────────────────────────────────────────
     return {
         "LightGBM": LGBMClassifier(
             n_estimators=500, is_unbalance=bal, random_state=42,
@@ -547,12 +873,6 @@ def get_models_for_tier(tier: int, is_imbalanced: bool,
 
 
 def get_cv_config(tier: int) -> dict:
-    """
-    Returns:
-      use_cv     – whether to run cross_val_score
-      folds      – number of CV folds
-      cv_sample  – if set, subsample X to this size before CV
-    """
     configs = {
         TIER_TINY:    {"use_cv": True,  "folds": 5, "cv_sample": None},
         TIER_SMALL:   {"use_cv": True,  "folds": 5, "cv_sample": None},
@@ -571,13 +891,7 @@ def get_cv_config(tier: int) -> dict:
 class UniversalTrainer:
     """
     Train ANY binary classification dataset, any size, automatically.
-
-    Tier 0  <1K       → full grid · 5-fold CV · no sampling
-    Tier 1  1K–50K    → full grid · 5-fold CV
-    Tier 2  50K–200K  → full grid · 3-fold CV
-    Tier 3  200K–500K → 3-model  · 2-fold CV
-    Tier 4  500K–2M   → 2-model  · 2-fold CV on 200K subsample
-    Tier 5  2M+       → LGB only · no CV · 500K train sample · chunked predict
+    v6.0: Includes SmartDataCleaner for messy raw data.
     """
 
     def __init__(self, model_save_path: str = "models/universal_model.pkl"):
@@ -596,8 +910,7 @@ class UniversalTrainer:
         self.tier             = None
         self.all_scores       = {}
         self.metrics          = {}
-
-    # ─── helpers ─────────────────────────────────────────────────────────────
+        self.cleaning_report  = {}
 
     def _encode_target(self, y: pd.Series, positive_label) -> np.ndarray:
         unique_vals = y.unique()
@@ -630,15 +943,15 @@ class UniversalTrainer:
         idxs = idxs[:max_rows]
         return X.iloc[idxs].reset_index(drop=True), y[idxs]
 
-    # ─── fit ─────────────────────────────────────────────────────────────────
-
     def fit(
         self,
         df: pd.DataFrame,
         target_col: str,
         positive_label=None,
         test_size: float = 0.2,
-        sample_if_large: bool = True,   # kept for API compat
+        sample_if_large: bool = True,
+        clean_data: bool = True,
+        outlier_method: str = "iqr",
         progress_callback=None
     ) -> dict:
 
@@ -647,10 +960,30 @@ class UniversalTrainer:
             if progress_callback:
                 progress_callback(step, total, msg)
 
-        T = 8   # total steps
+        T = 9  # total steps
 
-        # ── 1  Profile ────────────────────────────────────────────────────────
-        _p(1, T, "Profiling dataset & detecting column types…")
+        # ── 1  Clean data ─────────────────────────────────────────────────────
+        _p(1, T, "Smart data cleaning (duplicates, outliers, type coercion)…")
+
+        # Drop rows where target is missing
+        if target_col in df.columns:
+            n_before = len(df)
+            df = df.dropna(subset=[target_col]).reset_index(drop=True)
+            n_dropped = n_before - len(df)
+            if n_dropped > 0:
+                _p(1, T, f"Dropped {n_dropped:,} rows with missing target")
+
+        if clean_data:
+            cleaner = SmartDataCleaner(outlier_method=outlier_method)
+            df, self.cleaning_report = cleaner.clean(df, target_col)
+            changes = self.cleaning_report.get("changes", [])
+            for ch in changes:
+                _p(1, T, f"  ✓ {ch}")
+        else:
+            self.cleaning_report = {"changes": [], "skipped": True}
+
+        # ── 2  Profile ────────────────────────────────────────────────────────
+        _p(2, T, "Profiling dataset & detecting column types…")
         profiler     = DatasetProfiler()
         self.profile = profiler.profile(df, target_col)
         self.tier    = self.profile["tier"]
@@ -658,16 +991,17 @@ class UniversalTrainer:
         self.target_col     = target_col
         self.positive_label = positive_label
 
-        _p(1, T, f"Tier detected: {tier_lbl}  ·  strategy: {TIER_STRATEGY[self.tier]}")
+        _p(2, T, f"Tier: {tier_lbl}  ·  Strategy: {TIER_STRATEGY[self.tier]}")
 
         if self.profile["n_classes"] != 2:
             raise ValueError(
                 f"Binary classification only. "
-                f"Found {self.profile['n_classes']} classes."
+                f"Found {self.profile['n_classes']} classes: "
+                f"{list(self.profile['class_counts'].keys())}"
             )
 
-        # ── 2  Prepare features ───────────────────────────────────────────────
-        _p(2, T, "Dropping IDs / dates / text columns…")
+        # ── 3  Prepare features ───────────────────────────────────────────────
+        _p(3, T, "Dropping IDs / dates / text columns…")
         drop_cols = (
             self.profile["id_cols"] +
             self.profile["date_cols"] +
@@ -683,33 +1017,31 @@ class UniversalTrainer:
         if not self.feature_names:
             raise ValueError("No usable features after type detection.")
 
-        _p(2, T, f"{len(num_cols)} numeric + {len(cat_cols)} categorical features"
-                 f" | dropped {len(drop_cols)} cols")
+        _p(3, T, f"{len(num_cols)} numeric + {len(cat_cols)} categorical "
+                 f"| dropped {len(drop_cols)} cols")
 
-        # ── 3  Preprocessor ───────────────────────────────────────────────────
-        _p(3, T, "Building preprocessing pipeline…")
+        # ── 4  Preprocessor ───────────────────────────────────────────────────
+        _p(4, T, "Building preprocessing pipeline…")
         preprocessor = build_preprocessor(num_cols, cat_cols)
 
-        # ── 4  Complexity detection (always fast — 5K sample) ─────────────────
-        _p(4, T, "Detecting problem complexity (linear vs non-linear)…")
+        # ── 5  Complexity detection ───────────────────────────────────────────
+        _p(5, T, "Detecting problem complexity (linear vs non-linear)…")
         detector          = ComplexityDetector()
         self.complexity_info = detector.detect(X, y, preprocessor)
         complexity         = self.complexity_info["complexity"]
-        _p(4, T, f"Complexity → {complexity}  |  {self.complexity_info['note']}")
+        _p(5, T, f"Complexity → {complexity}  |  {self.complexity_info['note']}")
 
-        # ── 5  Tier-aware split ───────────────────────────────────────────────
-        _p(5, T, f"Splitting data [{tier_lbl}]…")
+        # ── 6  Tier-aware split ───────────────────────────────────────────────
+        _p(6, T, f"Splitting data [{tier_lbl}]…")
 
         if self.tier == TIER_MASSIVE:
-            # Sample 500K for training; evaluation on a 100K held-out set
             X_s, y_s = self._stratified_sample(X, y, max_rows=500_000)
             X_train, X_val, y_train, y_val = train_test_split(
                 X_s, y_s, test_size=test_size, random_state=42, stratify=y_s
             )
             del X_s, y_s, X, y
             gc.collect()
-            _p(5, T, f"Massive: training on {len(X_train):,} rows "
-                     f"(stratified 500K sample from {self.profile['n_rows']:,})")
+            _p(6, T, f"Massive: {len(X_train):,} train from {self.profile['n_rows']:,} total")
 
         elif self.tier == TIER_XLARGE:
             X_s, y_s = self._stratified_sample(X, y, max_rows=500_000)
@@ -718,8 +1050,7 @@ class UniversalTrainer:
             )
             del X_s, y_s, X, y
             gc.collect()
-            _p(5, T, f"XLarge: training on {len(X_train):,} rows "
-                     f"(stratified 500K sample)")
+            _p(6, T, f"XLarge: {len(X_train):,} train from {self.profile['n_rows']:,} total")
 
         else:
             X_train, X_val, y_train, y_val = train_test_split(
@@ -728,10 +1059,10 @@ class UniversalTrainer:
             if self.tier >= TIER_LARGE:
                 del X, y
                 gc.collect()
-            _p(5, T, f"Train {len(X_train):,} · Val {len(X_val):,}")
+            _p(6, T, f"Train {len(X_train):,} · Val {len(X_val):,}")
 
-        # ── 6  Model training (tier-aware) ────────────────────────────────────
-        _p(6, T, "Training models…")
+        # ── 7  Model training ─────────────────────────────────────────────────
+        _p(7, T, "Training models (tier-aware)…")
         models  = get_models_for_tier(self.tier, self.profile["is_imbalanced"], complexity)
         cv_cfg  = get_cv_config(self.tier)
         use_cv  = cv_cfg["use_cv"]
@@ -741,7 +1072,7 @@ class UniversalTrainer:
         best_score, best_pipeline, best_name = -np.inf, None, None
 
         for i, (name, model) in enumerate(models.items(), 1):
-            _p(6, T, f"  [{i}/{len(models)}] {name}…")
+            _p(7, T, f"  [{i}/{len(models)}] Training {name}…")
 
             pipeline = Pipeline([
                 ("preprocessor", preprocessor),
@@ -761,8 +1092,6 @@ class UniversalTrainer:
                         cv=skf, scoring="roc_auc", n_jobs=-1
                     )
                     score  = float(np.mean(scores))
-                    logger.info("%s CV(%d) AUC: %.5f ±%.5f",
-                                name, n_folds, score, float(np.std(scores)))
                 except Exception as e:
                     logger.warning("%s CV failed: %s", name, e)
                     score = 0.0
@@ -772,13 +1101,11 @@ class UniversalTrainer:
                     best_score, best_pipeline, best_name = score, pipeline, name
 
             else:
-                # Massive tier: no CV, fit directly
                 try:
                     pipeline.fit(X_train, y_train)
                     score = roc_auc_score(
                         y_val, pipeline.predict_proba(X_val)[:,1]
                     )
-                    logger.info("%s (no-CV) val AUC: %.5f", name, score)
                 except Exception as e:
                     logger.warning("%s fit failed: %s", name, e)
                     score = 0.0
@@ -786,21 +1113,17 @@ class UniversalTrainer:
                 if score > best_score:
                     best_score, best_pipeline, best_name = score, pipeline, name
 
-        logger.info("Best: %s (score=%.5f)", best_name, best_score)
-
-        # Final fit on full train set (CV tiers only)
         if use_cv:
-            _p(6, T, f"Final fit: {best_name} on {len(X_train):,} rows…")
+            _p(7, T, f"Final fit: {best_name} on {len(X_train):,} rows…")
             best_pipeline.fit(X_train, y_train)
 
         self.best_pipeline   = best_pipeline
         self.best_model_name = best_name
         self.best_score      = best_score
 
-        # ── 7  Threshold optimisation ─────────────────────────────────────────
-        _p(7, T, "Optimising decision threshold (max F1)…")
+        # ── 8  Threshold optimisation ─────────────────────────────────────────
+        _p(8, T, "Optimising decision threshold (max F1)…")
 
-        # Use at most 200K for threshold search (fast)
         if len(X_val) > 200_000:
             Xvs, yvs = self._stratified_sample(X_val, y_val, 200_000)
         else:
@@ -811,10 +1134,10 @@ class UniversalTrainer:
         pr, re = prec[:-1], rec[:-1]
         f1s    = (2 * pr * re) / (pr + re + 1e-8)
         self.threshold = float(thresholds[np.argmax(f1s)]) if len(thresholds) > 0 else 0.5
-        _p(7, T, f"Optimal threshold: {self.threshold:.5f}")
+        _p(8, T, f"Optimal threshold: {self.threshold:.5f}")
 
-        # ── 8  Evaluate ───────────────────────────────────────────────────────
-        _p(8, T, "Evaluating…")
+        # ── 9  Evaluate ───────────────────────────────────────────────────────
+        _p(9, T, "Evaluating…")
         y_pred = (y_proba >= self.threshold).astype(int)
         cm     = confusion_matrix(yvs, y_pred)
         tn, fp, fn, tp = cm.ravel() if cm.shape == (2, 2) else (0, 0, 0, 0)
@@ -838,19 +1161,11 @@ class UniversalTrainer:
             "n_train":         len(X_train),
             "n_val":           len(Xvs),
             "n_rows_total":    self.profile["n_rows"],
+            "cleaning_report": self.cleaning_report,
         }
-
-        logger.info(
-            "Done · ROC-AUC=%.5f · F1=%.5f · Recall=%.5f",
-            self.metrics["test_roc_auc"],
-            self.metrics["f1_score"],
-            self.metrics["recall"],
-        )
 
         self.save()
         return self.metrics
-
-    # ── Predict (chunked for massive inference) ───────────────────────────────
 
     def predict_proba(self, X: pd.DataFrame,
                       chunk_size: int = 100_000) -> np.ndarray:
@@ -869,11 +1184,9 @@ class UniversalTrainer:
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         return (self.predict_proba(X) >= self.threshold).astype(int)
 
-    # ── Save / Load ───────────────────────────────────────────────────────────
-
     def save(self, path: str = None):
         path = path or self.model_save_path
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        os.makedirs(os.path.dirname(path) if os.path.dirname(path) else ".", exist_ok=True)
         joblib.dump({
             "pipeline":        self.best_pipeline,
             "threshold":       self.threshold,
@@ -888,6 +1201,7 @@ class UniversalTrainer:
             "all_scores":      self.all_scores,
             "label_encoder":   self.label_encoder,
             "tier":            self.tier,
+            "cleaning_report": self.cleaning_report,
         }, path)
         logger.info("Model saved → %s", path)
 
@@ -909,4 +1223,5 @@ class UniversalTrainer:
         self.all_scores       = pkg["all_scores"]
         self.label_encoder    = pkg.get("label_encoder")
         self.tier             = pkg.get("tier")
+        self.cleaning_report  = pkg.get("cleaning_report", {})
         return self

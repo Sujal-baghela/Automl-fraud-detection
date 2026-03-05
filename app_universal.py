@@ -1,8 +1,9 @@
 """
-app_universal.py
-════════════════
+app_universal.py  ·  AutoML-X v6.0
+════════════════════════════════════
 AutoML-X Universal Trainer — PUBLIC HuggingFace Space
-Runs on port 7860. No fraud detection code here.
+Runs on port 7860.
+Professional dark UI — industrial SaaS aesthetic.
 """
 
 import sys
@@ -13,488 +14,1052 @@ import streamlit as st
 import joblib
 import matplotlib
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 matplotlib.use("Agg")
 
-# Ensure /app is on the path so `src.universal_trainer` resolves correctly
 _app_dir = os.path.dirname(os.path.abspath(__file__))
 if _app_dir not in sys.path:
     sys.path.insert(0, _app_dir)
 
 from src.universal_trainer import (
-    UniversalTrainer, DatasetProfiler,
-    ColumnTypeDetector, ComplexityDetector,
+    UniversalTrainer, DatasetProfiler, DataQualityReport,
+    SmartDataCleaner, ColumnTypeDetector, ComplexityDetector,
     check_ram_safety, load_csv_chunked,
     get_tier, TIER_LABELS, TIER_STRATEGY,
     TIER_TINY, TIER_SMALL, TIER_MEDIUM,
     TIER_LARGE, TIER_XLARGE, TIER_MASSIVE,
 )
 
-# ── Page config ───────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="AutoML-X Universal Trainer",
-    page_icon="🤖",
+    page_title="AutoML-X",
+    page_icon="⬡",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# ── CSS ───────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# DESIGN SYSTEM
+# ─────────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@300;400;600&display=swap');
-html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-.main { background: #0a0a0f; }
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500&display=swap');
 
-.metric-card  { background:#13131a; border:1px solid #1e1e2e; border-radius:12px; padding:20px; text-align:center; }
-.metric-value { font-family:'Space Mono',monospace; font-size:2rem; font-weight:700; color:#00aaff; }
-.metric-label { font-size:.8rem; color:#666; text-transform:uppercase; letter-spacing:1px; margin-top:4px; }
-.pos-alert    { background:linear-gradient(135deg,#1a0a0a,#2a0a0a); border:1px solid #ff4444; border-radius:12px; padding:24px; text-align:center; }
-.neg-alert    { background:linear-gradient(135deg,#0a1a0a,#0a2a0a); border:1px solid #00ff88; border-radius:12px; padding:24px; text-align:center; }
+/* ── Reset & Base ─────────────────────────────────────────────────────── */
+html, body, [class*="css"] {
+    font-family: 'DM Sans', sans-serif;
+    background: #080810 !important;
+    color: #c8c8d8;
+}
+.main { background: #080810 !important; }
+.block-container { padding: 2rem 2.5rem 4rem; max-width: 1400px; }
 
-.col-badge   { display:inline-block; padding:2px 10px; border-radius:12px; font-size:.72rem; font-weight:600; margin:2px; font-family:'Space Mono',monospace; }
-.col-numeric { background:#0a2a1a; border:1px solid #00cc66; color:#00cc66; }
-.col-cat     { background:#1a1a0a; border:1px solid #ffcc00; color:#ffcc00; }
-.col-id      { background:#2a0a0a; border:1px solid #ff4444; color:#ff4444; }
-.col-date    { background:#0a1a2a; border:1px solid #00aaff; color:#00aaff; }
-.col-text    { background:#2a0a2a; border:1px solid #cc00ff; color:#cc00ff; }
+/* ── Scrollbar ─────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: #0d0d18; }
+::-webkit-scrollbar-thumb { background: #2a2a4a; border-radius: 2px; }
 
-.tier-banner { border-radius:10px; padding:14px 20px; margin:10px 0; }
-.tier-0      { background:#0a1a0a; border:1px solid #00cc66; }
-.tier-1      { background:#0a1a12; border:1px solid #00cc88; }
-.tier-2      { background:#0a1220; border:1px solid #00aaff; }
-.tier-3      { background:#1a120a; border:1px solid #ffaa00; }
-.tier-4      { background:#1a0a0a; border:1px solid #ff6600; }
-.tier-5      { background:#2a0a0a; border:1px solid #ff2222; }
+/* ── Sidebar ───────────────────────────────────────────────────────────── */
+[data-testid="stSidebar"] {
+    background: #05050e !important;
+    border-right: 1px solid #13132a !important;
+}
+[data-testid="stSidebar"] .block-container { padding: 1.5rem 1.2rem; }
 
-.complexity-box { background:#13131a; border:1px solid #1e1e2e; border-radius:10px; padding:16px 20px; margin:8px 0; }
-.info-chip { display:inline-block; background:#1a1a2e; border-radius:6px; padding:3px 8px; font-size:.75rem; color:#aaa; margin:2px; font-family:'Space Mono',monospace; }
-.profile-row      { display:flex; align-items:center; padding:6px 0; border-bottom:1px solid #1a1a2a; }
-.profile-col-name { font-family:'Space Mono',monospace; font-size:.8rem; color:#ccc; flex:2; }
-.profile-col-type { flex:1; }
-.profile-col-stats{ flex:3; font-size:.78rem; color:#888; }
+/* ── Hide Streamlit chrome ─────────────────────────────────────────────── */
+#MainMenu, footer, header { visibility: hidden; }
+[data-testid="stDecoration"] { display: none; }
+
+/* ── Typography ────────────────────────────────────────────────────────── */
+.brand-title {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 2.6rem;
+    letter-spacing: -1px;
+    background: linear-gradient(135deg, #e8e8ff 0%, #7878ff 50%, #4040cc 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1;
+    margin-bottom: 0.2rem;
+}
+.brand-sub {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+    color: #44445a;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-bottom: 2rem;
+}
+.page-title {
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 1.8rem;
+    color: #e8e8ff;
+    letter-spacing: -0.5px;
+    margin-bottom: 0.15rem;
+}
+.page-sub {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+    color: #44445a;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 1.5rem;
+}
+
+/* ── Cards ─────────────────────────────────────────────────────────────── */
+.card {
+    background: #0d0d1a;
+    border: 1px solid #1a1a2e;
+    border-radius: 12px;
+    padding: 1.4rem 1.6rem;
+    margin-bottom: 1rem;
+}
+.card-accent {
+    background: linear-gradient(135deg, #0d0d1a 0%, #0f0f22 100%);
+    border: 1px solid #22224a;
+    border-radius: 12px;
+    padding: 1.4rem 1.6rem;
+    margin-bottom: 1rem;
+    position: relative;
+    overflow: hidden;
+}
+.card-accent::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, #4040cc, #7878ff, #40ccaa);
+}
+
+/* ── Metric cards ──────────────────────────────────────────────────────── */
+.metric-grid { display: grid; gap: 0.8rem; }
+.metric-grid-2 { grid-template-columns: repeat(2, 1fr); }
+.metric-grid-3 { grid-template-columns: repeat(3, 1fr); }
+.metric-grid-4 { grid-template-columns: repeat(4, 1fr); }
+.metric-grid-5 { grid-template-columns: repeat(5, 1fr); }
+
+.m-card {
+    background: #0d0d1a;
+    border: 1px solid #1a1a2e;
+    border-radius: 10px;
+    padding: 1rem 1.2rem;
+    text-align: center;
+    transition: border-color 0.2s;
+}
+.m-card:hover { border-color: #3030aa; }
+.m-val {
+    font-family: 'DM Mono', monospace;
+    font-size: 1.6rem;
+    font-weight: 500;
+    color: #7878ff;
+    line-height: 1.2;
+    display: block;
+}
+.m-val-lg { font-size: 2rem; }
+.m-val-green { color: #40ccaa; }
+.m-val-amber { color: #ccaa40; }
+.m-val-red   { color: #cc4040; }
+.m-lbl {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.65rem;
+    color: #44445a;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-top: 0.3rem;
+    display: block;
+}
+
+/* ── Tier badges ───────────────────────────────────────────────────────── */
+.tier-strip {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.9rem 1.2rem;
+    border-radius: 8px;
+    margin: 0.8rem 0;
+    border-left: 3px solid;
+}
+.tier-0 { background: #080f10; border-color: #40ccaa; }
+.tier-1 { background: #080f10; border-color: #40cc88; }
+.tier-2 { background: #08100f; border-color: #4088ff; }
+.tier-3 { background: #100d08; border-color: #ccaa40; }
+.tier-4 { background: #100808; border-color: #cc6640; }
+.tier-5 { background: #100808; border-color: #cc4040; }
+
+.tier-name {
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 0.85rem;
+}
+.tier-detail {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.7rem;
+    color: #55556a;
+}
+.tier-strategy {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.68rem;
+    color: #44445a;
+    margin-top: 0.15rem;
+}
+
+/* ── Column type badges ────────────────────────────────────────────────── */
+.badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.55rem;
+    border-radius: 4px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.65rem;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    margin: 2px;
+}
+.b-num  { background: #0a1f14; border: 1px solid #40cc88; color: #40cc88; }
+.b-cat  { background: #1a1800; border: 1px solid #ccaa40; color: #ccaa40; }
+.b-id   { background: #1a0808; border: 1px solid #cc4040; color: #cc4040; }
+.b-date { background: #080f1a; border: 1px solid #4088ff; color: #4088ff; }
+.b-text { background: #180a1a; border: 1px solid #aa40cc; color: #aa40cc; }
+
+/* ── Complexity block ──────────────────────────────────────────────────── */
+.complexity-panel {
+    background: #0d0d1a;
+    border-radius: 10px;
+    padding: 1.2rem 1.4rem;
+    border-left: 3px solid;
+    margin: 0.8rem 0;
+}
+.cplx-linear    { border-color: #4088ff; }
+.cplx-nonlinear { border-color: #cc8840; }
+.cplx-mixed     { border-color: #40ccaa; }
+.cplx-unknown   { border-color: #55556a; }
+
+.cplx-title {
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 1rem;
+    margin-bottom: 0.3rem;
+}
+.cplx-note {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+    color: #55556a;
+    margin-bottom: 0.6rem;
+}
+.chip {
+    display: inline-block;
+    background: #13132a;
+    border: 1px solid #22224a;
+    border-radius: 4px;
+    padding: 0.15rem 0.5rem;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.68rem;
+    color: #7878aa;
+    margin: 2px;
+}
+
+/* ── Quality report ────────────────────────────────────────────────────── */
+.quality-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.7rem;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid #111120;
+    font-size: 0.82rem;
+}
+.q-icon { font-size: 0.9rem; flex-shrink: 0; margin-top: 1px; }
+.q-msg  { color: #9898aa; flex: 1; font-family: 'DM Sans', sans-serif; }
+
+/* ── Column profile table ──────────────────────────────────────────────── */
+.col-row {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    padding: 0.65rem 0;
+    border-bottom: 1px solid #0f0f1e;
+}
+.col-name {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.78rem;
+    color: #c8c8d8;
+    flex: 0 0 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.col-type-cell { flex: 0 0 80px; }
+.col-stats {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.7rem;
+    color: #55556a;
+    flex: 1;
+}
+.col-miss {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.7rem;
+    color: #7878aa;
+    flex: 0 0 80px;
+    text-align: right;
+}
+
+/* ── Result cards ──────────────────────────────────────────────────────── */
+.result-positive {
+    background: linear-gradient(135deg, #100808, #1a0a0a);
+    border: 1px solid #cc4040;
+    border-radius: 12px;
+    padding: 2rem;
+    text-align: center;
+}
+.result-negative {
+    background: linear-gradient(135deg, #081008, #0a180a);
+    border: 1px solid #40cc88;
+    border-radius: 12px;
+    padding: 2rem;
+    text-align: center;
+}
+.result-label {
+    font-family: 'Syne', sans-serif;
+    font-size: 1.4rem;
+    font-weight: 800;
+    letter-spacing: 3px;
+    margin-bottom: 0.4rem;
+}
+.result-prob {
+    font-family: 'DM Mono', monospace;
+    font-size: 3rem;
+    font-weight: 500;
+    line-height: 1;
+    margin-bottom: 0.5rem;
+}
+.result-meta {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.7rem;
+    color: #44445a;
+    letter-spacing: 1px;
+}
+
+/* ── Nav pills in sidebar ──────────────────────────────────────────────── */
+[data-testid="stRadio"] > div {
+    gap: 0.3rem;
+}
+[data-testid="stRadio"] label {
+    border-radius: 6px !important;
+    padding: 0.45rem 0.8rem !important;
+    font-family: 'DM Mono', monospace !important;
+    font-size: 0.78rem !important;
+    color: #55556a !important;
+    cursor: pointer;
+    transition: all 0.15s;
+    border: 1px solid transparent !important;
+}
+[data-testid="stRadio"] label:hover {
+    color: #9898cc !important;
+    background: #0d0d1a !important;
+    border-color: #22224a !important;
+}
+[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) {
+    color: #a0a0ff !important;
+    background: #0f0f22 !important;
+    border-color: #3030aa !important;
+}
+
+/* ── Streamlit overrides ───────────────────────────────────────────────── */
+.stButton > button {
+    background: #1a1a33 !important;
+    color: #9898ff !important;
+    border: 1px solid #2a2a55 !important;
+    border-radius: 8px !important;
+    font-family: 'DM Mono', monospace !important;
+    font-size: 0.8rem !important;
+    letter-spacing: 1px !important;
+    padding: 0.6rem 1.2rem !important;
+    transition: all 0.15s !important;
+}
+.stButton > button:hover {
+    background: #22224a !important;
+    border-color: #4444aa !important;
+    color: #bbbbff !important;
+}
+.stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, #2020aa, #3030cc) !important;
+    color: #e8e8ff !important;
+    border-color: #4040ff !important;
+}
+.stButton > button[kind="primary"]:hover {
+    background: linear-gradient(135deg, #2828bb, #4040dd) !important;
+}
+div[data-testid="stDataFrame"] { border-radius: 8px; overflow: hidden; }
+.stProgress > div > div { background: linear-gradient(90deg, #3030aa, #6060ff) !important; border-radius: 2px; }
+.stSelectbox > div > div,
+.stTextInput > div > div { background: #0d0d1a !important; border-color: #1a1a2e !important; color: #c8c8d8 !important; border-radius: 8px !important; }
+.stFileUploader { background: #0d0d1a !important; border: 1px dashed #22224a !important; border-radius: 10px !important; }
+label { color: #7878aa !important; font-family: 'DM Mono', monospace !important; font-size: 0.75rem !important; text-transform: uppercase; letter-spacing: 1px; }
+.stAlert { border-radius: 8px !important; }
+hr { border-color: #111120 !important; }
+.stExpander { background: #0d0d1a !important; border: 1px solid #1a1a2e !important; border-radius: 10px !important; }
+.stExpander summary { font-family: 'DM Mono', monospace !important; font-size: 0.78rem !important; color: #7878aa !important; }
+
+/* ── Progress bar log ──────────────────────────────────────────────────── */
+.log-box {
+    background: #05050e;
+    border: 1px solid #111120;
+    border-radius: 8px;
+    padding: 0.8rem 1rem;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+    color: #55558a;
+    max-height: 180px;
+    overflow-y: auto;
+    line-height: 1.8;
+}
+.log-box .log-active { color: #7878ff; }
+.log-box .log-done   { color: #40cc88; }
+
+/* ── Sidebar model status ──────────────────────────────────────────────── */
+.model-status-card {
+    background: #0a0a18;
+    border: 1px solid #1a1a30;
+    border-radius: 8px;
+    padding: 0.9rem 1rem;
+    margin: 0.5rem 0;
+}
+.ms-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.2rem 0;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+}
+.ms-key { color: #44445a; }
+.ms-val { color: #9898cc; font-weight: 500; }
+
+/* ── Step indicator ────────────────────────────────────────────────────── */
+.step-bar {
+    display: flex;
+    gap: 0.4rem;
+    margin-bottom: 1.5rem;
+    align-items: center;
+}
+.step-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #1a1a2e;
+    border: 1px solid #22224a;
+    flex-shrink: 0;
+}
+.step-dot.active { background: #4040cc; border-color: #6060ff; }
+.step-dot.done   { background: #40cc88; border-color: #40cc88; }
+.step-line { flex: 1; height: 1px; background: #111120; }
+.step-label { font-family: 'DM Mono', monospace; font-size: 0.65rem; color: #44445a; }
+
+/* ── Section header ────────────────────────────────────────────────────── */
+.sec-header {
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 1rem;
+    color: #c8c8e8;
+    margin: 1.2rem 0 0.6rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.sec-header::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #111120;
+    margin-left: 0.5rem;
+}
+
+/* ── Upload zone ───────────────────────────────────────────────────────── */
+[data-testid="stFileUploadDropzone"] {
+    background: #0d0d1a !important;
+    border: 1px dashed #22224a !important;
+    border-radius: 10px !important;
+    padding: 1.5rem !important;
+}
+[data-testid="stFileUploadDropzone"]:hover {
+    border-color: #4444aa !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ─────────────────────────────────────────────────────────────────────────────
+# HELPERS
+# ─────────────────────────────────────────────────────────────────────────────
+
+TIER_META = {
+    TIER_TINY:    ("#40ccaa", "TINY",    "< 1K rows"),
+    TIER_SMALL:   ("#40cc88", "SMALL",   "1K – 50K rows"),
+    TIER_MEDIUM:  ("#4088ff", "MEDIUM",  "50K – 200K rows"),
+    TIER_LARGE:   ("#ccaa40", "LARGE",   "200K – 500K rows"),
+    TIER_XLARGE:  ("#cc6640", "XLARGE",  "500K – 2M rows"),
+    TIER_MASSIVE: ("#cc4040", "MASSIVE", "2M+ rows"),
+}
+
+def render_tier(tier: int, n_rows: int = None):
+    color, name, rng = TIER_META[tier]
+    strategy = TIER_STRATEGY[tier]
+    row_str  = f" — {n_rows:,} rows" if n_rows else ""
+    st.markdown(f"""
+    <div class="tier-strip tier-{tier}">
+        <div>
+            <div class="tier-name" style="color:{color}">⬡ {name}</div>
+            <div class="tier-detail">{rng}{row_str}</div>
+        </div>
+        <div style="flex:1"></div>
+        <div class="tier-strategy">{strategy}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+def badge(col_type: str) -> str:
+    m = {
+        "numeric":    ("b-num",  "NUM"),
+        "categorical":("b-cat",  "CAT"),
+        "id_dropped": ("b-id",   "ID"),
+        "date":       ("b-date", "DATE"),
+        "text":       ("b-text", "TEXT"),
+    }
+    cls, lbl = m.get(col_type, ("b-num", col_type.upper()[:4]))
+    return f'<span class="badge {cls}">{lbl}</span>'
+
+
+def render_complexity(cplx: dict):
+    c      = cplx.get("complexity", "unknown")
+    cls_m  = {"linear":"cplx-linear","nonlinear":"cplx-nonlinear",
+               "mixed":"cplx-mixed","unknown":"cplx-unknown"}
+    icon_m = {"linear":"◈","nonlinear":"◉","mixed":"◫","unknown":"◌"}
+    col_m  = {"linear":"#4088ff","nonlinear":"#cc8840","mixed":"#40ccaa","unknown":"#55556a"}
+    css    = cls_m.get(c, "cplx-unknown")
+    icon   = icon_m.get(c, "◌")
+    color  = col_m.get(c, "#55556a")
+    lr     = cplx.get("lr_score",  "—")
+    lgb    = cplx.get("lgb_score", "—")
+    rec    = cplx.get("recommended", "All models")
+    note   = cplx.get("note", "")
+    st.markdown(f"""
+    <div class="complexity-panel {css}">
+        <div class="cplx-title" style="color:{color}">{icon} COMPLEXITY: {c.upper()}</div>
+        <div class="cplx-note">{note}</div>
+        <span class="chip">LR AUC {lr}</span>
+        <span class="chip">LGB AUC {lgb}</span>
+        <span class="chip">→ {rec}</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+def render_col_table(profile: dict):
+    col_stats = profile.get("col_stats", {})
+    if not col_stats:
+        return
+    html = '<div style="max-height:460px;overflow-y:auto">'
+    for col, stats in col_stats.items():
+        ctype = stats.get("type", "numeric")
+        b     = badge(ctype)
+        miss  = stats.get("missing_pct", 0)
+        miss_color = "#cc4040" if miss > 20 else "#7878aa"
+
+        if ctype == "numeric":
+            mean_v = stats.get("mean", "—")
+            std_v  = stats.get("std",  "—")
+            skew_v = stats.get("skew", "—")
+            min_v  = stats.get("min",  "—")
+            max_v  = stats.get("max",  "—")
+            detail = f"μ={mean_v} σ={std_v} skew={skew_v} [{min_v} … {max_v}]"
+        elif ctype == "categorical":
+            n_u   = stats.get("n_unique", "?")
+            tops  = stats.get("top_values", {})
+            top_s = " · ".join(f"{k}" for k in list(tops.keys())[:3])
+            detail = f"{n_u} unique → {top_s}"
+        else:
+            detail = stats.get("note", ctype)
+
+        html += f"""
+        <div class="col-row">
+            <div class="col-name" title="{col}">{col}</div>
+            <div class="col-type-cell">{b}</div>
+            <div class="col-stats">{detail}</div>
+            <div class="col-miss" style="color:{miss_color}">{miss:.1f}% miss</div>
+        </div>"""
+    html += "</div>"
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def render_quality_report(quality: dict):
+    issues = quality.get("issues", [])
+    if not issues:
+        st.markdown("""
+        <div class="card" style="border-color:#40cc88">
+            <span style="color:#40cc88;font-family:'Syne',sans-serif;font-weight:700">
+                ✓ NO ISSUES DETECTED
+            </span>
+            <span style="font-family:'DM Mono',monospace;font-size:0.75rem;color:#55556a;margin-left:1rem">
+                Dataset looks clean and ready to train
+            </span>
+        </div>
+        """, unsafe_allow_html=True)
+        return
+    icon_map = {"error": "✕", "warning": "△", "info": "○"}
+    col_map  = {"error": "#cc4040", "warning": "#ccaa40", "info": "#4088ff"}
+    html = '<div class="card" style="padding:0.8rem 1.2rem">'
+    for issue in issues:
+        sev   = issue.get("severity", "info")
+        icon  = icon_map.get(sev, "○")
+        color = col_map.get(sev, "#4088ff")
+        msg   = issue.get("message", "")
+        html += f"""
+        <div class="quality-row">
+            <div class="q-icon" style="color:{color}">{icon}</div>
+            <div class="q-msg">{msg}</div>
+        </div>"""
+    html += "</div>"
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def sidebar_model_status(trainer):
+    if trainer is None:
+        st.markdown("""
+        <div class="model-status-card">
+            <div style="font-family:'DM Mono',monospace;font-size:0.72rem;color:#33334a;
+                        text-align:center;padding:0.5rem">NO MODEL LOADED</div>
+        </div>
+        """, unsafe_allow_html=True)
+        return
+    m = trainer.metrics
+    rows = [
+        ("MODEL",   m.get("best_model", "—")),
+        ("TARGET",  trainer.target_col or "—"),
+        ("AUC",     f"{m.get('test_roc_auc',0):.5f}"),
+        ("F1",      f"{m.get('f1_score',0):.5f}"),
+        ("TIER",    m.get("tier_label","—").split()[0]),
+    ]
+    cplx = m.get("complexity", {})
+    if cplx:
+        rows.append(("COMPLEXITY", cplx.get("complexity","—").upper()))
+    html = '<div class="model-status-card">'
+    html += '<div style="font-family:\'DM Mono\',monospace;font-size:0.6rem;color:#33334a;letter-spacing:2px;text-transform:uppercase;margin-bottom:0.6rem">LOADED MODEL</div>'
+    for k, v in rows:
+        html += f'<div class="ms-row"><span class="ms-key">{k}</span><span class="ms-val">{v}</span></div>'
+    html += "</div>"
+    st.markdown(html, unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MATPLOTLIB STYLE
+# ─────────────────────────────────────────────────────────────────────────────
+
+def apply_plot_style(fig, ax_or_axes):
+    fig.patch.set_facecolor("#080810")
+    axes = ax_or_axes if isinstance(ax_or_axes, (list, np.ndarray)) else [ax_or_axes]
+    for ax in np.array(axes).flatten():
+        ax.set_facecolor("#0d0d1a")
+        ax.tick_params(colors="#44445a", labelsize=8)
+        for spine in ax.spines.values():
+            spine.set_edgecolor("#1a1a2e")
+        ax.xaxis.label.set_color("#55556a")
+        ax.yaxis.label.set_color("#55556a")
+        ax.title.set_color("#9898cc")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # CACHED LOADERS
-# ══════════════════════════════════════════════════════════════════════════════
+# ─────────────────────────────────────────────────────────────────────────────
 
 @st.cache_resource
-def load_universal_model():
+def load_saved_model():
     try:
-        trainer = UniversalTrainer()
-        trainer.load("models/universal_model.pkl")
-        return trainer
+        t = UniversalTrainer()
+        t.load("models/universal_model.pkl")
+        return t
     except Exception:
         return None
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# UI HELPERS
-# ══════════════════════════════════════════════════════════════════════════════
-
-TIER_ICONS = {
-    TIER_TINY:    ("🔵", "#00cc66", "Tiny"),
-    TIER_SMALL:   ("🟢", "#00cc88", "Small"),
-    TIER_MEDIUM:  ("🔷", "#00aaff", "Medium"),
-    TIER_LARGE:   ("🟠", "#ffaa00", "Large"),
-    TIER_XLARGE:  ("🔶", "#ff6600", "XLarge"),
-    TIER_MASSIVE: ("🔴", "#ff2222", "Massive"),
-}
-
-def render_tier_banner(tier: int, n_rows: int = None):
-    icon, color, name = TIER_ICONS[tier]
-    label    = TIER_LABELS[tier]
-    strategy = TIER_STRATEGY[tier]
-    rows_str = f" · {n_rows:,} rows" if n_rows else ""
-    st.markdown(f"""
-    <div class="tier-banner tier-{tier}">
-      <span style="font-size:1.1rem;font-weight:700;color:{color}">{icon} Dataset Tier: {name}</span>
-      <span style="color:#888;font-size:.85rem;margin-left:12px">{label}{rows_str}</span>
-      <div style="color:#aaa;font-size:.78rem;margin-top:4px;font-family:'Space Mono',monospace">
-        Strategy → {strategy}
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-
-def render_col_badge(col_type: str) -> str:
-    cls_map   = {"numeric":"col-numeric","categorical":"col-cat",
-                 "id_dropped":"col-id","date":"col-date","text":"col-text"}
-    label_map = {"numeric":"NUM","categorical":"CAT",
-                 "id_dropped":"ID ✕","date":"DATE ✕","text":"TEXT ✕"}
-    css   = cls_map.get(col_type, "col-numeric")
-    label = label_map.get(col_type, col_type.upper())
-    return f'<span class="col-badge {css}">{label}</span>'
-
-
-def render_profile_table(profile: dict):
-    col_stats = profile.get("col_stats", {})
-    if not col_stats:
-        return
-    rows_html = ""
-    for col, stats in col_stats.items():
-        col_type = stats.get("type", "unknown")
-        badge    = render_col_badge(col_type)
-        if col_type == "numeric":
-            detail = (
-                f'mean={stats.get("mean","?")} &nbsp;|&nbsp; '
-                f'std={stats.get("std","?")} &nbsp;|&nbsp; '
-                f'min={stats.get("min","?")} &nbsp;|&nbsp; '
-                f'max={stats.get("max","?")} &nbsp;|&nbsp; '
-                f'skew={stats.get("skew","?")} &nbsp;|&nbsp; '
-                f'{stats.get("missing_pct",0):.1f}% missing'
-            )
-        elif col_type == "categorical":
-            top     = stats.get("top_values", {})
-            top_str = " · ".join(f"{k}({v})" for k, v in list(top.items())[:3])
-            detail  = (f'{stats.get("n_unique","?")} unique &nbsp;|&nbsp; '
-                       f'top: {top_str} &nbsp;|&nbsp; '
-                       f'{stats.get("missing_pct",0):.1f}% missing')
-        else:
-            detail = stats.get("note", col_type)
-        rows_html += f"""
-        <div class="profile-row">
-          <div class="profile-col-name">{col}</div>
-          <div class="profile-col-type">{badge}</div>
-          <div class="profile-col-stats">{detail}</div>
-        </div>"""
-    st.markdown(
-        f'<div style="max-height:420px;overflow-y:auto;padding:4px 0">{rows_html}</div>',
-        unsafe_allow_html=True
-    )
-
-
-def render_complexity_box(cplx: dict):
-    c = cplx.get("complexity", "unknown")
-    color_map = {"linear":"#00aaff","nonlinear":"#ff8800",
-                 "mixed":"#00ff88","unknown":"#888"}
-    icon_map  = {"linear":"📐","nonlinear":"🌳","mixed":"⚖️","unknown":"❓"}
-    color = color_map.get(c, "#888")
-    icon  = icon_map.get(c, "❓")
-    lr    = cplx.get("lr_score",  "N/A")
-    lgb   = cplx.get("lgb_score", "N/A")
-    rec   = cplx.get("recommended", "All models")
-    note  = cplx.get("note", "")
-    st.markdown(f"""
-    <div class="complexity-box" style="border-color:{color}">
-      <div style="font-size:1.05rem;font-weight:700;color:{color};margin-bottom:6px">
-        {icon} Complexity: <span style="text-transform:uppercase">{c}</span>
-      </div>
-      <div style="font-size:.82rem;color:#aaa;margin-bottom:6px">{note}</div>
-      <span class="info-chip">LR AUC: {lr}</span>
-      <span class="info-chip">LGB AUC: {lgb}</span>
-      <span class="info-chip">→ {rec}</span>
-    </div>
-    """, unsafe_allow_html=True)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
+# ─────────────────────────────────────────────────────────────────────────────
 # SIDEBAR
-# ══════════════════════════════════════════════════════════════════════════════
+# ─────────────────────────────────────────────────────────────────────────────
 
 with st.sidebar:
-    st.markdown("## 🤖 AutoML-X")
-    st.markdown("*Universal Trainer*")
-    st.divider()
+    st.markdown('<div class="brand-title">AutoML-X</div>', unsafe_allow_html=True)
+    st.markdown('<div class="brand-sub">UNIVERSAL TRAINER · v6.0</div>', unsafe_allow_html=True)
 
-    trainer_loaded = load_universal_model()
-    if trainer_loaded:
-        m = trainer_loaded.metrics
-        st.markdown("### ✅ Model Loaded")
-        st.markdown(f"**Model:** `{m.get('best_model','N/A')}`")
-        st.markdown(f"**Target:** `{trainer_loaded.target_col}`")
-        st.markdown(f"**ROC-AUC:** `{m.get('test_roc_auc',0):.5f}`")
-        st.markdown(f"**Tier:** `{m.get('tier_label','?')}`")
-        cplx = m.get("complexity", {})
-        if cplx:
-            st.markdown(f"**Complexity:** `{cplx.get('complexity','?')}`")
-    else:
-        st.info("No model trained yet.")
+    saved_trainer = load_saved_model()
+    active_trainer = st.session_state.get("u_trainer") or saved_trainer
+    sidebar_model_status(active_trainer)
 
-    st.divider()
-    page = st.radio("Navigation", [
-        "📁 Upload & Configure",
-        "🚀 Train Model",
-        "📊 Results",
-        "🔍 Predict",
-        "📂 Batch Predict",
+    st.markdown("<br>", unsafe_allow_html=True)
+    page = st.radio("", [
+        "01 — Upload",
+        "02 — Analyze",
+        "03 — Train",
+        "04 — Results",
+        "05 — Predict",
+        "06 — Batch",
     ], label_visibility="collapsed")
-    st.divider()
-    st.caption("AutoML-X Platform · v5.0 · Universal")
+    st.markdown("<br>", unsafe_allow_html=True)
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# HEADER
-# ══════════════════════════════════════════════════════════════════════════════
-
-st.markdown("# 🤖 AutoML-X Universal Trainer")
-st.markdown("*Train any binary classification dataset — 100 rows to 2M+ rows — automatically*")
-st.divider()
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# PAGE: Upload & Configure
-# ══════════════════════════════════════════════════════════════════════════════
-
-if page == "📁 Upload & Configure":
-    st.subheader("📁 Upload Your Dataset")
+    # Tier legend
+    st.markdown("""
+    <div style="font-family:'DM Mono',monospace;font-size:0.6rem;color:#33334a;
+                letter-spacing:2px;text-transform:uppercase;margin-bottom:0.5rem">
+    TIER SYSTEM
+    </div>
+    """, unsafe_allow_html=True)
+    tier_rows = [
+        ("#40ccaa", "TINY",    "< 1K"),
+        ("#40cc88", "SMALL",   "1K–50K"),
+        ("#4088ff", "MEDIUM",  "50K–200K"),
+        ("#ccaa40", "LARGE",   "200K–500K"),
+        ("#cc6640", "XLARGE",  "500K–2M"),
+        ("#cc4040", "MASSIVE", "2M+"),
+    ]
+    legend_html = ""
+    for color, name, rng in tier_rows:
+        legend_html += f"""
+        <div style="display:flex;align-items:center;gap:0.5rem;padding:0.2rem 0">
+            <div style="width:6px;height:6px;border-radius:50%;background:{color};flex-shrink:0"></div>
+            <span style="font-family:'DM Mono',monospace;font-size:0.65rem;color:{color}">{name}</span>
+            <span style="font-family:'DM Mono',monospace;font-size:0.62rem;color:#33334a">{rng}</span>
+        </div>"""
+    st.markdown(legend_html, unsafe_allow_html=True)
 
     st.markdown("""
-    <div style="background:#0d0d1a;border:1px solid #1e1e2e;border-radius:10px;padding:14px 18px;margin-bottom:16px">
-    <div style="font-family:'Space Mono',monospace;font-size:.72rem;color:#555;text-transform:uppercase;letter-spacing:2px;margin-bottom:10px">Dataset Size Tiers — Auto-selected Strategy</div>
-    <div style="display:flex;flex-wrap:wrap;gap:8px;font-size:.78rem">
-      <span style="color:#00cc66">🔵 <b>Tiny</b> &lt;1K · 4 models · 5-fold CV</span>
-      <span style="color:#00cc88">🟢 <b>Small</b> 1K–50K · 4 models · 5-fold CV</span>
-      <span style="color:#00aaff">🔷 <b>Medium</b> 50K–200K · 4 models · 3-fold CV</span>
-      <span style="color:#ffaa00">🟠 <b>Large</b> 200K–500K · 3 models · 2-fold CV</span>
-      <span style="color:#ff6600">🔶 <b>XLarge</b> 500K–2M · LGB+LR · 2-fold on 200K sample</span>
-      <span style="color:#ff2222">🔴 <b>Massive</b> 2M+ · LGB only · no CV · chunked predict</span>
-    </div>
+    <div style="position:fixed;bottom:1rem;left:0;right:0;text-align:center;
+                font-family:'DM Mono',monospace;font-size:0.6rem;color:#22223a">
+    AutoML-X Platform · HuggingFace
     </div>
     """, unsafe_allow_html=True)
 
-    st.markdown("""
-    <div style="font-size:.75rem;color:#888;margin-bottom:12px">
-    <span class="col-badge col-numeric">NUM</span> Numeric feature &nbsp;
-    <span class="col-badge col-cat">CAT</span> Categorical &nbsp;
-    <span class="col-badge col-id">ID ✕</span> Auto-dropped &nbsp;
-    <span class="col-badge col-date">DATE ✕</span> Auto-dropped &nbsp;
-    <span class="col-badge col-text">TEXT ✕</span> Auto-dropped
-    </div>
-    """, unsafe_allow_html=True)
 
-    uploaded = st.file_uploader("Choose CSV file (any size)", type=["csv"])
+# ─────────────────────────────────────────────────────────────────────────────
+# PAGE: 01 — Upload
+# ─────────────────────────────────────────────────────────────────────────────
+
+if page == "01 — Upload":
+    st.markdown('<div class="page-title">Upload Dataset</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-sub">CSV · ANY SIZE · AUTO-CLEANED</div>', unsafe_allow_html=True)
+
+    # ── Upload area ───────────────────────────────────────────────────────────
+    uploaded = st.file_uploader("Drop your CSV here or click to browse", type=["csv"])
 
     if uploaded:
-        file_size_mb = uploaded.size / 1e6
-        is_large     = file_size_mb > 50
-        st.markdown(f"📎 **{uploaded.name}** — {file_size_mb:.1f} MB")
+        file_mb  = uploaded.size / 1e6
+        is_large = file_mb > 50
 
-        col1, col2 = st.columns(2)
+        st.markdown(f"""
+        <div class="card">
+            <span style="font-family:'DM Mono',monospace;font-size:0.78rem;color:#9898cc">
+                ◈ {uploaded.name}
+            </span>
+            <span style="font-family:'DM Mono',monospace;font-size:0.68rem;color:#44445a;margin-left:1rem">
+                {file_mb:.1f} MB
+                {"· chunked loader active" if is_large else "· full load"}
+            </span>
+        </div>
+        """, unsafe_allow_html=True)
+
+        col1, col2 = st.columns([1, 1])
         with col1:
             if is_large:
                 max_rows = st.slider(
-                    "Max rows to load",
-                    min_value=100_000, max_value=2_000_000,
-                    value=2_000_000, step=100_000,
-                    format="%d rows",
-                    help="Tier-aware training handles everything from here."
+                    "Row limit", min_value=100_000, max_value=2_000_000,
+                    value=2_000_000, step=100_000, format="{:,}",
+                    help="Hard cap on rows loaded. Tier-aware training handles the rest."
                 )
             else:
                 max_rows = None
-                st.success(f"✅ Small file ({file_size_mb:.1f} MB) — loading everything")
+                st.markdown("""
+                <div class="card" style="padding:0.7rem 1rem">
+                    <span style="font-family:'DM Mono',monospace;font-size:0.72rem;color:#40cc88">
+                        ✓ Small file — loading all rows
+                    </span>
+                </div>""", unsafe_allow_html=True)
         with col2:
             target_hint = st.text_input(
-                "Target column (for stratified sampling on huge files)",
-                value="", placeholder="e.g. Churn, fraud, label"
+                "Target column (optional — for stratified sampling)",
+                value="", placeholder="Churn, fraud, label…"
             )
             target_hint = target_hint.strip() or None
 
-        if st.button("📂 Load Dataset", type="primary", use_container_width=True):
-            placeholder = st.empty()
+        if st.button("⬡ Load Dataset", type="primary", use_container_width=True):
+            ph = st.empty()
+            prog = st.progress(0)
 
-            def chunk_cb(msg):
-                placeholder.info(f"⏳ {msg}")
+            def cb(msg):
+                ph.markdown(f"""
+                <div style="font-family:'DM Mono',monospace;font-size:0.75rem;color:#7878aa;
+                            padding:0.4rem 0">{msg}</div>""", unsafe_allow_html=True)
 
-            with st.spinner("Loading…"):
+            with st.spinner(""):
                 try:
                     if is_large:
                         df = load_csv_chunked(
-                            uploaded, max_rows=max_rows,
-                            chunk_size=100_000, target_col=target_hint,
-                            progress_callback=chunk_cb
+                            uploaded, max_rows=max_rows, chunk_size=100_000,
+                            target_col=target_hint, progress_callback=cb
                         )
                     else:
                         df = pd.read_csv(uploaded)
+                        cb(f"Loaded {len(df):,} rows")
 
-                    placeholder.empty()
-                    st.session_state["df"]       = df
-                    st.session_state["filename"] = uploaded.name
+                    prog.progress(1.0)
+                    ph.empty()
+                    prog.empty()
+
+                    st.session_state["df"]        = df
+                    st.session_state["filename"]  = uploaded.name
                     st.session_state.pop("profile", None)
+                    st.session_state.pop("quality", None)
 
                     tier = get_tier(len(df))
-                    st.success(
-                        f"✅ Loaded **{uploaded.name}** — "
-                        f"{len(df):,} rows × {df.shape[1]} cols"
-                    )
-                    render_tier_banner(tier, len(df))
+                    color, name, _ = TIER_META[tier]
+
+                    st.markdown(f"""
+                    <div class="card-accent">
+                        <div style="display:flex;align-items:center;gap:1.5rem">
+                            <div>
+                                <div style="font-family:'Syne',sans-serif;font-weight:700;
+                                            font-size:1.1rem;color:#e8e8ff">
+                                    Dataset Loaded
+                                </div>
+                                <div style="font-family:'DM Mono',monospace;font-size:0.72rem;
+                                            color:#44445a;margin-top:0.2rem">
+                                    {uploaded.name}
+                                </div>
+                            </div>
+                            <div style="display:flex;gap:1.5rem;margin-left:auto">
+                                <div style="text-align:center">
+                                    <div style="font-family:'DM Mono',monospace;font-size:1.3rem;
+                                                color:#7878ff">{len(df):,}</div>
+                                    <div style="font-family:'DM Mono',monospace;font-size:0.62rem;
+                                                color:#44445a;letter-spacing:1px">ROWS</div>
+                                </div>
+                                <div style="text-align:center">
+                                    <div style="font-family:'DM Mono',monospace;font-size:1.3rem;
+                                                color:#7878ff">{df.shape[1]}</div>
+                                    <div style="font-family:'DM Mono',monospace;font-size:0.62rem;
+                                                color:#44445a;letter-spacing:1px">COLS</div>
+                                </div>
+                                <div style="text-align:center">
+                                    <div style="font-family:'DM Mono',monospace;font-size:1.3rem;
+                                                color:{color}">{name}</div>
+                                    <div style="font-family:'DM Mono',monospace;font-size:0.62rem;
+                                                color:#44445a;letter-spacing:1px">TIER</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    render_tier(tier, len(df))
 
                 except Exception as e:
-                    placeholder.empty()
+                    ph.empty(); prog.empty()
                     st.error(f"Load failed: {e}")
 
-    if "df" in st.session_state and st.session_state["df"] is not None:
-        df   = st.session_state["df"]
+    # ── Preview if loaded ─────────────────────────────────────────────────────
+    if "df" in st.session_state:
+        df = st.session_state["df"]
+        st.markdown('<div class="sec-header">Preview</div>', unsafe_allow_html=True)
+        st.dataframe(df.head(6), use_container_width=True)
+
         ram  = check_ram_safety(df)
         tier = get_tier(len(df))
 
-        if not ram["is_safe"]:
-            st.warning(f"⚠️ {ram['warning']}")
-        else:
-            st.success(
-                f"✅ RAM OK · dataset {ram['dataframe_gb']:.3f} GB "
-                f"· {ram['available_gb']:.1f} GB free"
-            )
-
-        render_tier_banner(tier, len(df))
-        st.dataframe(df.head(8), use_container_width=True)
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Rows",    f"{len(df):,}")
-        c2.metric("Columns", df.shape[1])
-        c3.metric("Missing", f"{df.isnull().sum().sum():,}")
-        c4.metric("Size",    f"{ram['dataframe_gb']:.3f} GB")
-
-        st.divider()
-        st.subheader("⚙️ Configure")
+        st.markdown('<div class="sec-header">Configure Target</div>', unsafe_allow_html=True)
         col1, col2 = st.columns(2)
         with col1:
-            target_col = st.selectbox("🎯 Target Column", df.columns.tolist(),
-                                      index=len(df.columns) - 1)
+            target_col = st.selectbox("Target column", df.columns.tolist(),
+                                      index=len(df.columns)-1)
             st.session_state["target_col"] = target_col
         with col2:
             unique_vals = df[target_col].dropna().unique().tolist()
-            pos_raw = st.selectbox("✅ Positive Value",
+            pos_raw = st.selectbox("Positive class value",
                                    ["Auto-detect"] + [str(v) for v in unique_vals])
             st.session_state["positive_label"] = (
                 None if pos_raw == "Auto-detect" else pos_raw
             )
 
-        st.divider()
-        if st.button("🔍 Analyze Dataset", type="primary", use_container_width=True):
-            with st.spinner("Running smart analysis…"):
-                try:
-                    profiler = DatasetProfiler()
-                    profile  = profiler.profile(df, target_col)
-                    st.session_state["profile"] = profile
-                except Exception as e:
-                    st.error(f"Analysis failed: {e}")
+        if not ram["is_safe"]:
+            st.warning(f"⚠️ {ram['warning']}")
 
-        if "profile" in st.session_state and st.session_state["profile"]:
-            profile = st.session_state["profile"]
-            st.divider()
-            st.subheader("📊 Dataset Analysis Report")
+        st.markdown(f"""
+        <div style="font-family:'DM Mono',monospace;font-size:0.7rem;color:#44445a;
+                    margin-top:0.5rem;text-align:right">
+            RAM: {ram['dataframe_gb']:.3f} GB used · {ram['available_gb']:.1f} GB free
+        </div>
+        """, unsafe_allow_html=True)
 
-            render_tier_banner(profile["tier"], profile["n_rows"])
-            st.caption(f"Training strategy: **{profile['tier_strategy']}**")
-
-            c1, c2, c3, c4, c5, c6 = st.columns(6)
-            c1.metric("Numeric",     profile["n_numeric"])
-            c2.metric("Categorical", profile["n_categorical"])
-            c3.metric("IDs Dropped", profile["n_id_dropped"])
-            c4.metric("Dates Drop.", profile["n_date_dropped"])
-            c5.metric("Missing %",   f"{profile['missing_pct']}%")
-            c6.metric("Imbalanced",  "Yes ⚠️" if profile["is_imbalanced"] else "No ✅")
-
-            st.divider()
-            ca, cb = st.columns(2)
-            with ca:
-                st.markdown("**🎯 Class Distribution**")
-                class_df = pd.DataFrame.from_dict(
-                    profile["class_counts"], orient="index", columns=["Count"]
-                )
-                class_df["Pct"] = (
-                    class_df["Count"] / class_df["Count"].sum() * 100
-                ).round(2)
-                st.dataframe(class_df, use_container_width=True)
-                if profile["n_classes"] != 2:
-                    st.error(f"❌ {profile['n_classes']} classes — only binary supported.")
-                elif profile["is_imbalanced"]:
-                    st.warning(
-                        f"⚠️ Imbalanced: minority = "
-                        f"{profile['minority_ratio']*100:.1f}% "
-                        f"— class_weight='balanced' will be applied"
-                    )
-                else:
-                    st.success("✅ Binary & balanced. Ready to train!")
-            with cb:
-                try:
-                    fig, ax = plt.subplots(figsize=(4, 2.5))
-                    labels  = [str(k) for k in profile["class_counts"].keys()]
-                    values  = list(profile["class_counts"].values())
-                    colors  = ["#00ff88", "#ff4444"] if len(values) >= 2 else ["#00aaff"]
-                    ax.bar(labels, values, color=colors[:len(values)])
-                    ax.set_title("Class Distribution", color="white")
-                    fig.patch.set_facecolor("#13131a")
-                    ax.set_facecolor("#13131a")
-                    ax.tick_params(colors="white")
-                    for sp in ax.spines.values():
-                        sp.set_edgecolor("#333")
-                    st.pyplot(fig)
-                    plt.close()
-                except Exception:
-                    pass
-
-            if profile.get("high_corr_pairs"):
-                st.divider()
-                st.markdown("**⚠️ Highly Correlated Features (>0.95)**")
-                st.dataframe(
-                    pd.DataFrame(profile["high_corr_pairs"],
-                                 columns=["Feature A", "Feature B", "Correlation"]),
-                    use_container_width=True, hide_index=True
-                )
-
-            st.divider()
-            st.markdown("**📋 Per-Column Profile**")
-            note_parts = []
-            if profile["id_cols"]:
-                note_parts.append(
-                    f'<span class="info-chip">🗑️ Dropping {len(profile["id_cols"])} ID col(s): '
-                    f'{", ".join(profile["id_cols"][:4])}'
-                    f'{"…" if len(profile["id_cols"]) > 4 else ""}</span>'
-                )
-            if profile["date_cols"]:
-                note_parts.append(
-                    f'<span class="info-chip">📅 {len(profile["date_cols"])} date col(s) dropped</span>'
-                )
-            if profile["text_cols"]:
-                note_parts.append(
-                    f'<span class="info-chip">📝 {len(profile["text_cols"])} text col(s) dropped</span>'
-                )
-            if note_parts:
-                st.markdown(" ".join(note_parts), unsafe_allow_html=True)
-                st.markdown("")
-
-            render_profile_table(profile)
-
-            num_cols = profile["numeric_cols"]
-            if num_cols:
-                st.divider()
-                st.markdown("**📈 Numeric Feature Distributions (top 8)**")
-                show_cols = num_cols[:8]
-                n    = len(show_cols)
-                nc_  = min(4, n)
-                nr_  = (n + nc_ - 1) // nc_
-                fig, axes = plt.subplots(nr_, nc_, figsize=(4 * nc_, 2.5 * nr_))
-                axes_flat = np.array(axes).flatten() if n > 1 else [axes]
-                for i, col in enumerate(show_cols):
-                    ax   = axes_flat[i]
-                    data = df[col].dropna().sample(
-                        min(50_000, df[col].notna().sum()), random_state=42
-                    )
-                    ax.hist(data, bins=30, color="#00aaff", alpha=0.7, edgecolor="none")
-                    ax.set_title(col, color="white", fontsize=8)
-                    ax.set_facecolor("#0d0d1a")
-                    ax.tick_params(colors="#666", labelsize=6)
-                    for sp in ax.spines.values():
-                        sp.set_edgecolor("#222")
-                for j in range(n, len(axes_flat)):
-                    axes_flat[j].set_visible(False)
-                fig.patch.set_facecolor("#13131a")
-                fig.tight_layout(pad=1.0)
-                st.pyplot(fig)
-                plt.close()
+        st.markdown("")
+        st.info("👉 Go to **02 — Analyze** to inspect data quality before training.")
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# PAGE: Train Model
-# ══════════════════════════════════════════════════════════════════════════════
+# ─────────────────────────────────────────────────────────────────────────────
+# PAGE: 02 — Analyze
+# ─────────────────────────────────────────────────────────────────────────────
 
-elif page == "🚀 Train Model":
-    st.subheader("🚀 Train AutoML Model")
+elif page == "02 — Analyze":
+    st.markdown('<div class="page-title">Dataset Analysis</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-sub">PROFILING · QUALITY REPORT · DISTRIBUTIONS</div>', unsafe_allow_html=True)
 
-    if "df" not in st.session_state or st.session_state.get("df") is None:
-        st.warning("⚠️ Upload a dataset first.")
+    if "df" not in st.session_state:
+        st.warning("⚠️ Upload a dataset first (page 01).")
+        st.stop()
+
+    df         = st.session_state["df"]
+    target_col = st.session_state.get("target_col", df.columns[-1])
+    tier       = get_tier(len(df))
+    render_tier(tier, len(df))
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Rows",    f"{len(df):,}")
+    col2.metric("Columns", df.shape[1])
+    col3.metric("Missing", f"{df.isnull().sum().sum():,}")
+    col4.metric("Target",  target_col)
+
+    # ── Quick quality scan ────────────────────────────────────────────────────
+    st.markdown('<div class="sec-header">Data Quality Scan</div>', unsafe_allow_html=True)
+    dqr     = DataQualityReport()
+    quality = dqr.assess(df, target_col)
+    st.session_state["quality"] = quality
+
+    qcol1, qcol2, qcol3, qcol4 = st.columns(4)
+    quality_color = {"excellent":"#40cc88","good":"#40cc88","fair":"#ccaa40","poor":"#cc4040"}
+    qc = quality_color.get(quality["overall_quality"], "#7878aa")
+    qcol1.markdown(f"""
+    <div class="m-card"><span class="m-val" style="color:{qc}">{quality['overall_quality'].upper()}</span>
+    <span class="m-lbl">QUALITY</span></div>""", unsafe_allow_html=True)
+    qcol2.markdown(f"""
+    <div class="m-card"><span class="m-val m-val-red">{quality['n_errors']}</span>
+    <span class="m-lbl">ERRORS</span></div>""", unsafe_allow_html=True)
+    qcol3.markdown(f"""
+    <div class="m-card"><span class="m-val m-val-amber">{quality['n_warnings']}</span>
+    <span class="m-lbl">WARNINGS</span></div>""", unsafe_allow_html=True)
+    qcol4.markdown(f"""
+    <div class="m-card"><span class="m-val" style="color:#4088ff">{quality['n_info']}</span>
+    <span class="m-lbl">INFO</span></div>""", unsafe_allow_html=True)
+
+    render_quality_report(quality)
+
+    # ── Full profile ──────────────────────────────────────────────────────────
+    if st.button("⬡ Run Full Profile", type="primary", use_container_width=True):
+        with st.spinner("Profiling…"):
+            try:
+                profiler = DatasetProfiler()
+                profile  = profiler.profile(df, target_col)
+                st.session_state["profile"] = profile
+            except Exception as e:
+                st.error(f"Profile failed: {e}")
+
+    if "profile" in st.session_state:
+        profile = st.session_state["profile"]
+
+        # Counts
+        st.markdown('<div class="sec-header">Feature Overview</div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="metric-grid metric-grid-5" style="margin-bottom:1rem">
+            <div class="m-card"><span class="m-val m-val-green">{profile['n_numeric']}</span>
+                <span class="m-lbl">NUMERIC</span></div>
+            <div class="m-card"><span class="m-val m-val-amber">{profile['n_categorical']}</span>
+                <span class="m-lbl">CATEGORICAL</span></div>
+            <div class="m-card"><span class="m-val m-val-red">{profile['n_id_dropped']}</span>
+                <span class="m-lbl">IDs DROPPED</span></div>
+            <div class="m-card"><span class="m-val" style="color:#4088ff">{profile['n_date_dropped']}</span>
+                <span class="m-lbl">DATES DROPPED</span></div>
+            <div class="m-card"><span class="m-val" style="color:#aa40cc">{profile['n_text_dropped']}</span>
+                <span class="m-lbl">TEXT DROPPED</span></div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Target distribution
+        st.markdown('<div class="sec-header">Target Distribution</div>', unsafe_allow_html=True)
+        tcol1, tcol2 = st.columns([1, 2])
+        with tcol1:
+            class_df = pd.DataFrame.from_dict(
+                profile["class_counts"], orient="index", columns=["Count"]
+            )
+            class_df["Pct"] = (class_df["Count"] / class_df["Count"].sum() * 100).round(2)
+            st.dataframe(class_df, use_container_width=True)
+            if profile["is_imbalanced"]:
+                st.markdown(f"""
+                <div style="font-family:'DM Mono',monospace;font-size:0.72rem;color:#ccaa40;
+                            margin-top:0.4rem">
+                    △ Imbalanced — minority {profile['minority_ratio']*100:.1f}%
+                    <br>class_weight='balanced' will be applied
+                </div>""", unsafe_allow_html=True)
+            else:
+                st.markdown("""
+                <div style="font-family:'DM Mono',monospace;font-size:0.72rem;color:#40cc88;
+                            margin-top:0.4rem">✓ Balanced classes</div>""",
+                            unsafe_allow_html=True)
+        with tcol2:
+            try:
+                fig, ax = plt.subplots(figsize=(5, 2.5))
+                labels  = [str(k) for k in profile["class_counts"].keys()]
+                values  = list(profile["class_counts"].values())
+                colors  = ["#4088ff", "#cc4040"] if len(values) >= 2 else ["#4088ff"]
+                bars    = ax.bar(labels, values, color=colors[:len(values)],
+                                 width=0.5, edgecolor="none")
+                for bar, val in zip(bars, values):
+                    ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(values)*0.01,
+                            f"{val:,}", ha="center", va="bottom",
+                            color="#7878aa", fontsize=8, fontfamily="monospace")
+                ax.set_title("Class Counts", fontsize=9)
+                apply_plot_style(fig, ax)
+                fig.tight_layout(pad=0.5)
+                st.pyplot(fig); plt.close()
+            except Exception:
+                pass
+
+        # High correlations
+        if profile.get("high_corr_pairs"):
+            st.markdown('<div class="sec-header">⚠ High Correlations ( > 0.95 )</div>',
+                        unsafe_allow_html=True)
+            st.dataframe(
+                pd.DataFrame(profile["high_corr_pairs"],
+                             columns=["Feature A", "Feature B", "Correlation"]),
+                use_container_width=True, hide_index=True
+            )
+
+        # Column profile
+        st.markdown('<div class="sec-header">Column Profile</div>', unsafe_allow_html=True)
+        render_col_table(profile)
+
+        # Distributions
+        num_cols = profile["numeric_cols"]
+        if num_cols:
+            st.markdown('<div class="sec-header">Numeric Distributions (top 8)</div>',
+                        unsafe_allow_html=True)
+            show = num_cols[:8]
+            nc_  = min(4, len(show))
+            nr_  = (len(show) + nc_ - 1) // nc_
+            fig, axes = plt.subplots(nr_, nc_, figsize=(4.5*nc_, 2.5*nr_))
+            flat = np.array(axes).flatten() if len(show) > 1 else [axes]
+            for i, col in enumerate(show):
+                ax   = flat[i]
+                data = df[col].dropna().sample(min(50_000, df[col].notna().sum()), random_state=42)
+                ax.hist(data, bins=30, color="#4040cc", alpha=0.8, edgecolor="none")
+                ax.set_title(col, fontsize=8)
+            for j in range(len(show), len(flat)):
+                flat[j].set_visible(False)
+            apply_plot_style(fig, flat)
+            fig.tight_layout(pad=1.0)
+            st.pyplot(fig); plt.close()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PAGE: 03 — Train
+# ─────────────────────────────────────────────────────────────────────────────
+
+elif page == "03 — Train":
+    st.markdown('<div class="page-title">Train Model</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-sub">AUTO-ML · TIER-AWARE · SMART CLEANING</div>', unsafe_allow_html=True)
+
+    if "df" not in st.session_state:
+        st.warning("⚠️ Upload a dataset first (page 01).")
         st.stop()
 
     df         = st.session_state["df"]
@@ -502,48 +1067,63 @@ elif page == "🚀 Train Model":
     pos_label  = st.session_state.get("positive_label")
 
     if not target_col:
-        st.warning("⚠️ Set the target column first.")
+        st.warning("⚠️ Set target column on page 01.")
         st.stop()
 
     tier = get_tier(len(df))
-    render_tier_banner(tier, len(df))
+    render_tier(tier, len(df))
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Dataset",   st.session_state.get("filename", "Uploaded"))
-    c2.metric("Rows",      f"{len(df):,}")
-    c3.metric("Target",    target_col)
-    c4.metric("Pos.Label", pos_label or "Auto")
+    # ── Config ────────────────────────────────────────────────────────────────
+    st.markdown('<div class="sec-header">Training Configuration</div>', unsafe_allow_html=True)
+    cfg1, cfg2, cfg3 = st.columns(3)
+    with cfg1:
+        clean_data = st.checkbox("Smart data cleaning", value=True,
+                                 help="Remove duplicates, cap outliers, coerce types")
+    with cfg2:
+        outlier_method = st.selectbox("Outlier method", ["iqr", "zscore", "none"],
+                                      help="IQR: robust, Z-score: normal distributions")
+    with cfg3:
+        test_size = st.slider("Validation split", 0.1, 0.4, 0.2, 0.05,
+                              format="%.0f%%",
+                              help="Fraction of data for evaluation")
+        test_size = float(f"{test_size:.2f}")
 
-    st.divider()
-    with st.expander("ℹ️ Auto-selected training strategy for this tier", expanded=True):
-        strategies = {
-            TIER_TINY:    "**Tiny (<1K)** → All 4 models (LR+RF+LGB+XGB) · 5-fold CV · full data.",
-            TIER_SMALL:   "**Small (1K–50K)** → All 4 models · 5-fold CV · full data.",
-            TIER_MEDIUM:  "**Medium (50K–200K)** → All 4 models · 3-fold CV · reduced n_estimators.",
-            TIER_LARGE:   "**Large (200K–500K)** → LR + LGB + XGB · 2-fold CV · RF dropped (too slow).",
-            TIER_XLARGE:  "**XLarge (500K–2M)** → LGB + LR · 2-fold CV on 200K subsample → full fit on 500K.",
-            TIER_MASSIVE: "**Massive (2M+)** → LightGBM only · no CV · 500K train sample · chunked 100K inference.",
-        }
-        st.markdown(strategies[tier])
-        st.markdown("""
-        **All tiers include:**
-        - ✅ Smart column type detection (IDs/dates/text auto-dropped)
-        - ✅ Complexity detection (linear vs non-linear → picks best models)
-        - ✅ Optimal threshold search (max F1)
-        - ✅ Chunked predict for large inference batches
-        """)
+    # Strategy info
+    strategies = {
+        TIER_TINY:    "4 models (LR · RF · LGB · XGB) · 5-fold CV · full data",
+        TIER_SMALL:   "4 models (LR · RF · LGB · XGB) · 5-fold CV · full data",
+        TIER_MEDIUM:  "4 models (LR · RF · LGB · XGB) · 3-fold CV",
+        TIER_LARGE:   "3 models (LR · LGB · XGB) · 2-fold CV",
+        TIER_XLARGE:  "2 models (LGB · LR) · 2-fold CV on 200K subsample",
+        TIER_MASSIVE: "1 model (LGB) · no CV · 500K train sample · chunked inference",
+    }
+    st.markdown(f"""
+    <div class="card" style="margin:0.5rem 0 1rem">
+        <span style="font-family:'DM Mono',monospace;font-size:0.68rem;color:#44445a;
+                     letter-spacing:1px">AUTO STRATEGY → </span>
+        <span style="font-family:'DM Mono',monospace;font-size:0.75rem;color:#9898cc">
+            {strategies[tier]}
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
 
-    if st.button("🚀 Start Training", type="primary", use_container_width=True):
-        progress_bar = st.progress(0)
-        status_text  = st.empty()
-        log_area     = st.empty()
-        log_lines    = []
+    # ── Train ─────────────────────────────────────────────────────────────────
+    if st.button("⬡ Start Training", type="primary", use_container_width=True):
+        prog     = st.progress(0)
+        log_ph   = st.empty()
+        log_lines = []
+        step_map = {}
 
-        def update_progress(step, total, msg):
-            progress_bar.progress(step / total)
-            status_text.markdown(f"**Step {step}/{total}:** {msg}")
-            log_lines.append(f"[{step}/{total}] {msg}")
-            log_area.code("\n".join(log_lines[-8:]))
+        def on_progress(step, total, msg):
+            prog.progress(step / total)
+            log_lines.append((step, total, msg))
+            # Build log HTML
+            html = '<div class="log-box">'
+            for s, t, m in log_lines[-12:]:
+                cls = "log-active" if s == log_lines[-1][0] else "log-done"
+                html += f'<div class="{cls}">[{s}/{t}] {m}</div>'
+            html += "</div>"
+            log_ph.markdown(html, unsafe_allow_html=True)
 
         try:
             trainer = UniversalTrainer(model_save_path="models/universal_model.pkl")
@@ -551,245 +1131,440 @@ elif page == "🚀 Train Model":
                 df=df,
                 target_col=target_col,
                 positive_label=pos_label,
-                progress_callback=update_progress
+                test_size=test_size,
+                clean_data=clean_data,
+                outlier_method=outlier_method,
+                progress_callback=on_progress
             )
             st.session_state["u_trainer"] = trainer
             st.session_state["u_metrics"] = metrics
-            progress_bar.progress(1.0)
-            log_area.empty()
-            status_text.empty()
 
-            st.success(
-                f"🎉 Training complete! "
-                f"Best model: **{metrics['best_model']}** · "
-                f"ROC-AUC: **{metrics['test_roc_auc']:.5f}**"
-            )
+            prog.progress(1.0)
+            log_ph.empty()
 
-            c1, c2, c3, c4, c5 = st.columns(5)
-            c1.metric("Best Model", metrics["best_model"])
-            c2.metric("ROC-AUC",    f"{metrics['test_roc_auc']:.5f}")
-            c3.metric("F1",         f"{metrics['f1_score']:.5f}")
-            c4.metric("Recall",     f"{metrics['recall']:.5f}")
-            c5.metric("Features",   metrics.get("n_features_used", "?"))
+            # ── Success card ─────────────────────────────────────────────────
+            st.markdown(f"""
+            <div class="card-accent" style="margin-top:1rem">
+                <div style="font-family:'Syne',sans-serif;font-weight:700;
+                            font-size:1.2rem;color:#40cc88;margin-bottom:0.8rem">
+                    ✓ Training Complete
+                </div>
+                <div class="metric-grid metric-grid-5">
+                    <div class="m-card">
+                        <span class="m-val m-val-green">{metrics['best_model']}</span>
+                        <span class="m-lbl">BEST MODEL</span>
+                    </div>
+                    <div class="m-card">
+                        <span class="m-val">{metrics['test_roc_auc']:.4f}</span>
+                        <span class="m-lbl">ROC-AUC</span>
+                    </div>
+                    <div class="m-card">
+                        <span class="m-val">{metrics['f1_score']:.4f}</span>
+                        <span class="m-lbl">F1</span>
+                    </div>
+                    <div class="m-card">
+                        <span class="m-val">{metrics['recall']:.4f}</span>
+                        <span class="m-lbl">RECALL</span>
+                    </div>
+                    <div class="m-card">
+                        <span class="m-val">{metrics.get('n_features_used','?')}</span>
+                        <span class="m-lbl">FEATURES</span>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
             cplx = metrics.get("complexity")
             if cplx:
-                st.divider()
-                render_complexity_box(cplx)
+                render_complexity(cplx)
+
+            # Cleaning summary
+            cr = metrics.get("cleaning_report", {})
+            if cr and cr.get("changes"):
+                with st.expander(f"⬡ Cleaning applied — {len(cr['changes'])} change(s)"):
+                    for ch in cr["changes"]:
+                        st.markdown(f"""
+                        <div style="font-family:'DM Mono',monospace;font-size:0.75rem;
+                                    color:#7878aa;padding:0.3rem 0">✓ {ch}</div>
+                        """, unsafe_allow_html=True)
 
             dropped = metrics.get("dropped_cols", [])
             if dropped:
-                st.info(
-                    f"🗑️ Auto-dropped {len(dropped)} col(s): "
-                    f"`{'`, `'.join(dropped[:6])}`"
-                    f"{'…' if len(dropped) > 6 else ''}"
-                )
+                st.markdown(f"""
+                <div style="font-family:'DM Mono',monospace;font-size:0.72rem;
+                            color:#44445a;margin-top:0.5rem">
+                    Dropped {len(dropped)} cols: {', '.join(f'`{c}`' for c in dropped[:8])}
+                    {'…' if len(dropped) > 8 else ''}
+                </div>
+                """, unsafe_allow_html=True)
 
-            st.info("👉 Go to **📊 Results** for full breakdown.")
+            st.markdown("")
+            st.info("→ Go to **04 — Results** for full performance breakdown.")
 
         except Exception as e:
+            prog.empty(); log_ph.empty()
             st.error(f"Training failed: {e}")
             import traceback
-            with st.expander("Full traceback"):
+            with st.expander("Traceback"):
                 st.code(traceback.format_exc())
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# PAGE: Results
-# ══════════════════════════════════════════════════════════════════════════════
+# ─────────────────────────────────────────────────────────────────────────────
+# PAGE: 04 — Results
+# ─────────────────────────────────────────────────────────────────────────────
 
-elif page == "📊 Results":
-    trainer = st.session_state.get("u_trainer") or load_universal_model()
+elif page == "04 — Results":
+    st.markdown('<div class="page-title">Results</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-sub">PERFORMANCE · COMPETITION · BREAKDOWN</div>', unsafe_allow_html=True)
+
+    trainer = st.session_state.get("u_trainer") or load_saved_model()
     if trainer is None:
-        st.warning("⚠️ No model trained yet.")
+        st.warning("⚠️ No trained model found.")
         st.stop()
 
-    metrics = trainer.metrics
-    st.subheader("📊 Performance Metrics")
+    m = trainer.metrics
+    render_tier(m.get("tier", 0), m.get("n_rows_total"))
 
-    render_tier_banner(metrics.get("tier", 0), metrics.get("n_rows_total"))
-    st.caption(f"Strategy used: **{metrics.get('tier_strategy','N/A')}**")
-    st.caption(
-        f"Trained on {metrics.get('n_train',0):,} rows · "
-        f"evaluated on {metrics.get('n_val',0):,} rows"
-    )
+    # ── Core metrics ──────────────────────────────────────────────────────────
+    st.markdown('<div class="sec-header">Performance</div>', unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class="metric-grid metric-grid-5" style="margin-bottom:1rem">
+        <div class="m-card">
+            <span class="m-val m-val-green">{m.get('best_model','—')}</span>
+            <span class="m-lbl">WINNER</span>
+        </div>
+        <div class="m-card">
+            <span class="m-val">{m.get('cv_roc_auc',0):.5f}</span>
+            <span class="m-lbl">CV ROC-AUC</span>
+        </div>
+        <div class="m-card">
+            <span class="m-val">{m.get('test_roc_auc',0):.5f}</span>
+            <span class="m-lbl">TEST ROC-AUC</span>
+        </div>
+        <div class="m-card">
+            <span class="m-val">{m.get('f1_score',0):.5f}</span>
+            <span class="m-lbl">F1 SCORE</span>
+        </div>
+        <div class="m-card">
+            <span class="m-val">{m.get('recall',0):.5f}</span>
+            <span class="m-lbl">RECALL</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    st.divider()
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Best Model",   metrics["best_model"])
-    c2.metric("CV ROC-AUC",   f"{metrics['cv_roc_auc']:.5f}")
-    c3.metric("Test ROC-AUC", f"{metrics['test_roc_auc']:.5f}")
-    c4.metric("F1 Score",     f"{metrics['f1_score']:.5f}")
-    c5.metric("Recall",       f"{metrics['recall']:.5f}")
-
-    cplx = metrics.get("complexity")
+    # Complexity
+    cplx = m.get("complexity")
     if cplx:
-        st.divider()
-        render_complexity_box(cplx)
+        render_complexity(cplx)
 
-    st.divider()
-    ca, cb = st.columns(2)
-    with ca:
-        st.markdown("**🏆 Model Competition**")
+    # ── Model competition ─────────────────────────────────────────────────────
+    st.markdown('<div class="sec-header">Model Competition</div>', unsafe_allow_html=True)
+    rc1, rc2 = st.columns([1, 2])
+    scores = m.get("all_cv_scores", {})
+
+    with rc1:
         scores_df = pd.DataFrame({
-            "Model":      list(metrics["all_cv_scores"].keys()),
-            "CV ROC-AUC": list(metrics["all_cv_scores"].values()),
+            "Model": list(scores.keys()),
+            "CV ROC-AUC": list(scores.values()),
         }).sort_values("CV ROC-AUC", ascending=False).reset_index(drop=True)
 
-        def hl(row):
-            return ["background-color:#0a2a1a;color:#00ff88" if row.name == 0 else "" for _ in row]
-        st.dataframe(scores_df.style.apply(hl, axis=1),
+        def hl_winner(row):
+            style = "background:#0a1f10;color:#40cc88" if row.name == 0 else ""
+            return [style] * len(row)
+        st.dataframe(scores_df.style.apply(hl_winner, axis=1),
                      use_container_width=True, hide_index=True)
-    with cb:
-        try:
-            fig, ax = plt.subplots(figsize=(4, 3))
-            ms = scores_df.sort_values("CV ROC-AUC")
-            colors = ["#00ff88" if i == len(ms) - 1 else "#00aaff" for i in range(len(ms))]
-            ax.barh(ms["Model"], ms["CV ROC-AUC"], color=colors, height=0.5)
-            ax.set_xlim(max(0, ms["CV ROC-AUC"].min() - 0.05), 1.0)
-            ax.set_xlabel("CV ROC-AUC", color="white")
-            fig.patch.set_facecolor("#13131a")
-            ax.set_facecolor("#0d0d1a")
-            ax.tick_params(colors="white")
-            for sp in ax.spines.values():
-                sp.set_edgecolor("#222")
-            st.pyplot(fig)
-            plt.close()
-        except Exception:
-            pass
 
-    st.divider()
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Threshold", f"{metrics['threshold']:.5f}")
-    c2.metric("Precision", f"{metrics['precision']:.5f}")
-    c3.metric("Recall",    f"{metrics['recall']:.5f}")
-    c4.metric("F1",        f"{metrics['f1_score']:.5f}")
-    tp, tn = metrics["TP"], metrics["TN"]
-    fp, fn = metrics["FP"], metrics["FN"]
-    st.markdown(f"**Confusion Matrix** · TP:`{tp}` TN:`{tn}` FP:`{fp}` FN:`{fn}`")
+    with rc2:
+        if scores:
+            try:
+                fig, ax = plt.subplots(figsize=(5, 3))
+                ms = scores_df.sort_values("CV ROC-AUC")
+                colors = ["#40cc88" if i == len(ms)-1 else "#4040cc"
+                          for i in range(len(ms))]
+                bars = ax.barh(ms["Model"], ms["CV ROC-AUC"],
+                               color=colors, height=0.5, edgecolor="none")
+                for bar, val in zip(bars, ms["CV ROC-AUC"]):
+                    ax.text(val + 0.001, bar.get_y() + bar.get_height()/2,
+                            f"{val:.4f}", va="center", color="#7878aa",
+                            fontsize=8, fontfamily="monospace")
+                ax.set_xlim(max(0, ms["CV ROC-AUC"].min() - 0.05), 1.02)
+                ax.set_xlabel("CV ROC-AUC", fontsize=8)
+                apply_plot_style(fig, ax)
+                fig.tight_layout(pad=0.5)
+                st.pyplot(fig); plt.close()
+            except Exception:
+                pass
 
-    dropped = metrics.get("dropped_cols", [])
-    if dropped:
-        st.divider()
-        st.markdown(f"**🗑️ Auto-dropped:** `{'`, `'.join(dropped)}`")
+    # ── Threshold & confusion ─────────────────────────────────────────────────
+    st.markdown('<div class="sec-header">Threshold & Confusion</div>', unsafe_allow_html=True)
+    th1, th2, th3, th4, th5 = st.columns(5)
+    th1.metric("Threshold", f"{m.get('threshold',0.5):.5f}")
+    th2.metric("Precision", f"{m.get('precision',0):.5f}")
+    th3.metric("Recall",    f"{m.get('recall',0):.5f}")
+    th4.metric("F1",        f"{m.get('f1_score',0):.5f}")
+    th5.metric("Features",  m.get("n_features_used", "?"))
 
-    st.divider()
+    tp, tn = m.get("TP", 0), m.get("TN", 0)
+    fp, fn = m.get("FP", 0), m.get("FN", 0)
+    total  = tp + tn + fp + fn or 1
+
+    try:
+        fig, ax = plt.subplots(figsize=(3.5, 2.8))
+        cm_data = np.array([[tn, fp], [fn, tp]])
+        im = ax.imshow(cm_data, cmap="Blues", aspect="auto")
+        ax.set_xticks([0,1]); ax.set_yticks([0,1])
+        ax.set_xticklabels(["Pred NEG","Pred POS"], fontsize=8, color="#7878aa")
+        ax.set_yticklabels(["Act NEG","Act POS"],   fontsize=8, color="#7878aa")
+        labels_cm = [[f"TN\n{tn:,}", f"FP\n{fp:,}"], [f"FN\n{fn:,}", f"TP\n{tp:,}"]]
+        for i in range(2):
+            for j in range(2):
+                ax.text(j, i, labels_cm[i][j], ha="center", va="center",
+                        fontsize=9, color="#e8e8ff", fontfamily="monospace", fontweight="bold")
+        ax.set_title("Confusion Matrix", fontsize=9)
+        apply_plot_style(fig, ax)
+        fig.tight_layout(pad=0.5)
+        col_cm, _ = st.columns([1, 2])
+        with col_cm:
+            st.pyplot(fig); plt.close()
+    except Exception:
+        st.markdown(f"TP: `{tp}` TN: `{tn}` FP: `{fp}` FN: `{fn}`")
+
+    # ── Training info ─────────────────────────────────────────────────────────
+    st.markdown('<div class="sec-header">Training Info</div>', unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class="card">
+        <div class="metric-grid metric-grid-4">
+            <div><span class="ms-key" style="font-family:'DM Mono',monospace;font-size:0.68rem;
+                        color:#44445a;text-transform:uppercase">Strategy</span>
+                 <div style="font-family:'DM Mono',monospace;font-size:0.78rem;color:#9898cc;margin-top:0.3rem">
+                    {m.get('tier_strategy','—')}</div></div>
+            <div><span class="ms-key" style="font-family:'DM Mono',monospace;font-size:0.68rem;
+                        color:#44445a;text-transform:uppercase">Train rows</span>
+                 <div style="font-family:'DM Mono',monospace;font-size:0.78rem;color:#9898cc;margin-top:0.3rem">
+                    {m.get('n_train',0):,}</div></div>
+            <div><span class="ms-key" style="font-family:'DM Mono',monospace;font-size:0.68rem;
+                        color:#44445a;text-transform:uppercase">Val rows</span>
+                 <div style="font-family:'DM Mono',monospace;font-size:0.78rem;color:#9898cc;margin-top:0.3rem">
+                    {m.get('n_val',0):,}</div></div>
+            <div><span class="ms-key" style="font-family:'DM Mono',monospace;font-size:0.68rem;
+                        color:#44445a;text-transform:uppercase">Total rows</span>
+                 <div style="font-family:'DM Mono',monospace;font-size:0.78rem;color:#9898cc;margin-top:0.3rem">
+                    {m.get('n_rows_total',0):,}</div></div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Cleaning report
+    cr = m.get("cleaning_report", {})
+    if cr and cr.get("changes"):
+        with st.expander(f"⬡ Data Cleaning Report — {len(cr['changes'])} action(s)"):
+            for ch in cr["changes"]:
+                st.markdown(f"""<div style="font-family:'DM Mono',monospace;font-size:0.75rem;
+                    color:#7878aa;padding:0.2rem 0">✓ {ch}</div>""",
+                            unsafe_allow_html=True)
+
+    # Download
+    st.markdown('<div class="sec-header">Export</div>', unsafe_allow_html=True)
     if os.path.exists("models/universal_model.pkl"):
         with open("models/universal_model.pkl", "rb") as f:
             st.download_button(
-                "⬇️ Download Model", f,
-                "universal_model.pkl", "application/octet-stream",
+                "⬇ Download Model (.pkl)",
+                f, "universal_model.pkl", "application/octet-stream",
                 use_container_width=True
             )
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# PAGE: Single Predict
-# ══════════════════════════════════════════════════════════════════════════════
+# ─────────────────────────────────────────────────────────────────────────────
+# PAGE: 05 — Predict
+# ─────────────────────────────────────────────────────────────────────────────
 
-elif page == "🔍 Predict":
-    trainer = st.session_state.get("u_trainer") or load_universal_model()
+elif page == "05 — Predict":
+    st.markdown('<div class="page-title">Single Prediction</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-sub">INTERACTIVE · REAL-TIME INFERENCE</div>', unsafe_allow_html=True)
+
+    trainer = st.session_state.get("u_trainer") or load_saved_model()
     if trainer is None:
         st.warning("⚠️ Train a model first.")
         st.stop()
 
-    st.subheader("🔍 Single Prediction")
-    features   = trainer.feature_names
-    df_ref     = st.session_state.get("df")
+    features = trainer.feature_names
+    df_ref   = st.session_state.get("df")
+
+    st.markdown(f"""
+    <div class="card">
+        <span style="font-family:'DM Mono',monospace;font-size:0.72rem;color:#55556a">
+            Model: <span style="color:#9898cc">{trainer.best_model_name}</span>
+            &nbsp;·&nbsp;
+            {len(features)} features
+            &nbsp;·&nbsp;
+            Threshold: <span style="color:#9898cc">{trainer.threshold:.5f}</span>
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown('<div class="sec-header">Feature Inputs</div>', unsafe_allow_html=True)
     input_vals = {}
-    col_list   = st.columns(4)
+    cols = st.columns(4)
     for i, feat in enumerate(features):
-        with col_list[i % 4]:
+        with cols[i % 4]:
             if df_ref is not None and feat in df_ref.columns:
                 sample = df_ref[feat].dropna()
                 if sample.dtype in [np.float64, np.int64, np.float32, np.int32]:
-                    input_vals[feat] = st.number_input(
-                        feat, value=float(sample.median()), format="%.4f"
-                    )
+                    input_vals[feat] = st.number_input(feat, value=float(sample.median()),
+                                                       format="%.4f", key=f"f_{feat}")
                 else:
-                    input_vals[feat] = st.selectbox(feat, sample.unique().tolist())
+                    uvals = sample.unique().tolist()
+                    input_vals[feat] = st.selectbox(feat, uvals, key=f"f_{feat}")
             else:
-                input_vals[feat] = st.number_input(feat, value=0.0)
+                input_vals[feat] = st.number_input(feat, value=0.0, key=f"f_{feat}")
 
-    if st.button("🚀 Predict", type="primary", use_container_width=True):
+    st.markdown("")
+    if st.button("⬡ Run Prediction", type="primary", use_container_width=True):
         try:
-            probability = float(trainer.predict_proba(pd.DataFrame([input_vals]))[0])
-            prediction  = int(probability >= trainer.threshold)
-            t           = trainer.threshold
-            if prediction == 1:
-                st.markdown(f"""<div class="pos-alert">
-                    <div style="font-size:3rem">⚠️</div>
-                    <div style="font-size:1.5rem;font-weight:700;color:#ff4444">POSITIVE</div>
-                    <div style="font-size:2.5rem;font-weight:700;color:#ff4444;font-family:monospace">{probability*100:.2f}%</div>
-                    <div style="color:#888">Probability | Threshold: {t:.5f}</div>
+            prob = float(trainer.predict_proba(pd.DataFrame([input_vals]))[0])
+            pred = int(prob >= trainer.threshold)
+            t    = trainer.threshold
+
+            if pred == 1:
+                st.markdown(f"""
+                <div class="result-positive">
+                    <div class="result-label" style="color:#cc4040">POSITIVE</div>
+                    <div class="result-prob" style="color:#cc4040">{prob*100:.2f}%</div>
+                    <div class="result-meta">PROBABILITY · THRESHOLD {t:.5f}</div>
                 </div>""", unsafe_allow_html=True)
             else:
-                st.markdown(f"""<div class="neg-alert">
-                    <div style="font-size:3rem">✅</div>
-                    <div style="font-size:1.5rem;font-weight:700;color:#00ff88">NEGATIVE</div>
-                    <div style="font-size:2.5rem;font-weight:700;color:#00ff88;font-family:monospace">{probability*100:.2f}%</div>
-                    <div style="color:#888">Probability | Threshold: {t:.5f}</div>
+                st.markdown(f"""
+                <div class="result-negative">
+                    <div class="result-label" style="color:#40cc88">NEGATIVE</div>
+                    <div class="result-prob" style="color:#40cc88">{prob*100:.2f}%</div>
+                    <div class="result-meta">PROBABILITY · THRESHOLD {t:.5f}</div>
                 </div>""", unsafe_allow_html=True)
+
+            # Gauge
+            try:
+                fig, ax = plt.subplots(figsize=(5, 0.6))
+                ax.barh([0], [1], color="#1a1a2e", height=0.4, edgecolor="none")
+                bar_color = "#cc4040" if pred == 1 else "#40cc88"
+                ax.barh([0], [prob], color=bar_color, height=0.4, edgecolor="none", alpha=0.9)
+                ax.axvline(t, color="#7878aa", linewidth=1.5, linestyle="--", alpha=0.8)
+                ax.set_xlim(0, 1); ax.set_ylim(-0.5, 0.5)
+                ax.axis("off")
+                ax.text(prob, 0.35, f"{prob:.3f}", ha="center", fontsize=8,
+                        color=bar_color, fontfamily="monospace")
+                ax.text(t, -0.45, f"threshold\n{t:.3f}", ha="center", fontsize=7,
+                        color="#55556a", fontfamily="monospace")
+                apply_plot_style(fig, ax)
+                fig.tight_layout(pad=0)
+                st.pyplot(fig); plt.close()
+            except Exception:
+                pass
+
         except Exception as e:
             st.error(f"Prediction failed: {e}")
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# PAGE: Batch Predict
-# ══════════════════════════════════════════════════════════════════════════════
+# ─────────────────────────────────────────────────────────────────────────────
+# PAGE: 06 — Batch
+# ─────────────────────────────────────────────────────────────────────────────
 
-elif page == "📂 Batch Predict":
-    trainer = st.session_state.get("u_trainer") or load_universal_model()
+elif page == "06 — Batch":
+    st.markdown('<div class="page-title">Batch Prediction</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-sub">CHUNKED · ANY SIZE · CSV OUTPUT</div>', unsafe_allow_html=True)
+
+    trainer = st.session_state.get("u_trainer") or load_saved_model()
     if trainer is None:
         st.warning("⚠️ Train a model first.")
         st.stop()
 
-    st.subheader("📂 Batch Prediction")
-    st.info(
-        f"Required features: `{'`, `'.join(trainer.feature_names[:5])}`… "
-        f"({len(trainer.feature_names)} total) · "
-        f"Chunked prediction (100K rows/chunk) — safe for any file size"
-    )
+    st.markdown(f"""
+    <div class="card">
+        <span style="font-family:'DM Mono',monospace;font-size:0.72rem;color:#55556a">
+            Model: <span style="color:#9898cc">{trainer.best_model_name}</span>
+            &nbsp;·&nbsp;
+            {len(trainer.feature_names)} required features
+            &nbsp;·&nbsp;
+            Chunked inference (100K rows/batch)
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
 
-    uploaded = st.file_uploader("Upload CSV (any size)", type=["csv"])
+    with st.expander("Required features"):
+        feat_html = " ".join(
+            f'<span class="badge b-num">{f}</span>'
+            for f in trainer.feature_names
+        )
+        st.markdown(feat_html, unsafe_allow_html=True)
+
+    uploaded = st.file_uploader("Upload CSV for batch inference", type=["csv"])
+
     if uploaded:
-        file_size_mb = uploaded.size / 1e6
-        if file_size_mb > 50:
-            st.info(f"⚡ Large file ({file_size_mb:.0f} MB) — chunked loader active")
+        file_mb  = uploaded.size / 1e6
+        is_large = file_mb > 50
+
+        if is_large:
+            st.markdown(f"""
+            <div style="font-family:'DM Mono',monospace;font-size:0.72rem;color:#ccaa40;
+                        margin-bottom:0.5rem">
+                △ Large file ({file_mb:.0f} MB) — chunked loader active
+            </div>""", unsafe_allow_html=True)
             with st.spinner("Loading…"):
                 df_new = load_csv_chunked(uploaded, max_rows=None, chunk_size=100_000)
         else:
             df_new = pd.read_csv(uploaded)
 
         tier_inf = get_tier(len(df_new))
-        st.success(f"Loaded {len(df_new):,} rows")
-        render_tier_banner(tier_inf, len(df_new))
+        render_tier(tier_inf, len(df_new))
+        st.markdown(f"""
+        <div style="font-family:'DM Mono',monospace;font-size:0.72rem;color:#40cc88;
+                    margin-bottom:0.5rem">
+            ✓ Loaded {len(df_new):,} rows
+        </div>""", unsafe_allow_html=True)
 
         X_raw = df_new.drop(columns=[trainer.target_col], errors="ignore")
 
-        if st.button("🚀 Run Batch Prediction", type="primary", use_container_width=True):
-            with st.spinner(f"Predicting {len(X_raw):,} rows (chunked 100K/batch)…"):
+        if st.button("⬡ Run Batch Prediction", type="primary", use_container_width=True):
+            with st.spinner(f"Predicting {len(X_raw):,} rows…"):
                 try:
-                    probabilities = trainer.predict_proba(X_raw)
-                    predictions   = (probabilities >= trainer.threshold).astype(int)
+                    probs = trainer.predict_proba(X_raw)
+                    preds = (probs >= trainer.threshold).astype(int)
 
                     results = df_new.copy()
-                    results["probability_%"]   = (probabilities * 100).round(4)
-                    results["predicted_class"] = predictions
-                    results["label"] = [
-                        "POSITIVE" if p == 1 else "NEGATIVE" for p in predictions
-                    ]
+                    results["probability"]     = (probs * 100).round(4)
+                    results["predicted_class"] = preds
+                    results["label"] = ["POSITIVE" if p == 1 else "NEGATIVE" for p in preds]
 
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric("Total",    f"{len(results):,}")
-                    c2.metric("Positive", f"{int(predictions.sum()):,}")
-                    c3.metric("Rate",     f"{predictions.mean()*100:.2f}%")
+                    pos_rate = preds.mean() * 100
+                    st.markdown(f"""
+                    <div class="metric-grid metric-grid-3" style="margin:1rem 0">
+                        <div class="m-card"><span class="m-val">{len(results):,}</span>
+                            <span class="m-lbl">TOTAL ROWS</span></div>
+                        <div class="m-card"><span class="m-val m-val-red">{int(preds.sum()):,}</span>
+                            <span class="m-lbl">POSITIVE</span></div>
+                        <div class="m-card"><span class="m-val">{pos_rate:.2f}%</span>
+                            <span class="m-lbl">POS RATE</span></div>
+                    </div>
+                    """, unsafe_allow_html=True)
 
-                    st.dataframe(results, use_container_width=True)
+                    # Distribution plot
+                    try:
+                        fig, ax = plt.subplots(figsize=(6, 2.5))
+                        ax.hist(probs, bins=50, color="#4040cc", alpha=0.8, edgecolor="none")
+                        ax.axvline(trainer.threshold, color="#cc4040", linewidth=1.5,
+                                   linestyle="--", label=f"threshold={trainer.threshold:.3f}")
+                        ax.set_xlabel("Probability", fontsize=8)
+                        ax.set_title("Score Distribution", fontsize=9)
+                        ax.legend(fontsize=7)
+                        apply_plot_style(fig, ax)
+                        fig.tight_layout(pad=0.5)
+                        st.pyplot(fig); plt.close()
+                    except Exception:
+                        pass
+
+                    st.dataframe(results.head(200), use_container_width=True)
                     st.download_button(
-                        "⬇️ Download Predictions",
+                        "⬇ Download Predictions CSV",
                         results.to_csv(index=False).encode(),
-                        "predictions.csv", "text/csv",
+                        "automlx_predictions.csv", "text/csv",
                         use_container_width=True
                     )
                 except Exception as e:

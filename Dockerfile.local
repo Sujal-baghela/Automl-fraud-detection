@@ -5,15 +5,20 @@
 #   • app_fraud_local.py   →  localhost:8501  (Fraud Detection)
 #   • app_universal.py     →  localhost:8502  (Universal Trainer)
 #
+# Uses requirements.txt + requirements.local.txt so fraud app
+# gets shap/mlflow without polluting the HF production image.
+#
 # Usage:
 #   docker compose up --build
 # ══════════════════════════════════════════════════════════════════
 
 FROM python:3.11-slim
 
-LABEL maintainer="Sujal Baghela"
+LABEL maintainer="AutoML-X"
 
 # ── System dependencies ───────────────────────────────────────────
+# libgomp1 = LightGBM needs OpenMP
+# supervisor = manages both Streamlit apps
 RUN apt-get update && apt-get install -y \
     libgomp1 \
     supervisor \
@@ -25,19 +30,21 @@ RUN useradd -m -u 1000 appuser
 WORKDIR /app
 
 # ── Python dependencies ───────────────────────────────────────────
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install HF requirements first, then local-only extras on top
+COPY requirements.txt requirements.local.txt ./
+RUN pip install --no-cache-dir -r requirements.txt -r requirements.local.txt
 
 # ── Copy project files ────────────────────────────────────────────
 COPY . .
 
 # ── Directories & permissions ─────────────────────────────────────
-RUN mkdir -p models logs /tmp/streamlit_fraud /tmp/streamlit_universal \
-    && chown -R appuser:appuser /app \
-    && chmod +x start_local.sh
+RUN mkdir -p models logs reports Data \
+    && chmod +x start_local.sh \
+    && chown -R appuser:appuser /app
 
 USER appuser
 
 EXPOSE 8501 8502
 
+# Used when running docker run directly (compose overrides this)
 CMD ["supervisord", "-c", "supervisord.local.conf"]
