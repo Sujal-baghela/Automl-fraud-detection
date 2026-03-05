@@ -1,793 +1,912 @@
 """
-app_universal.py
-════════════════
-AutoML-X Universal Trainer — PUBLIC HuggingFace Space
-Runs on port 7860. No fraud detection code here.
+universal_trainer.py  ·  AutoML-X v5.0
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Handles ANY dataset size end-to-end:
+
+  Tier 0  Tiny    :     0 – 1 000 rows  → All 4 models · 5-fold CV · no sampling
+  Tier 1  Small   :  1K  – 50K  rows   → All 4 models · 5-fold CV
+  Tier 2  Medium  :  50K – 200K rows   → All 4 models · 3-fold CV
+  Tier 3  Large   :  200K– 500K rows   → LR+LGB+XGB  · 2-fold CV
+  Tier 4  XLarge  :  500K–2M   rows   → LGB+LR only  · 2-fold CV on 200K sample
+  Tier 5  Massive :  2M+       rows   → LGB only     · no CV · direct 80/20 split
+                                         chunked predict for inference
 """
 
-import sys
 import os
+import gc
+import logging
+import warnings
 import numpy as np
 import pandas as pd
-import streamlit as st
+import psutil
+
+from sklearn.model_selection import (
+    train_test_split, cross_val_score, StratifiedKFold
+)
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder, LabelEncoder
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import (
+    roc_auc_score, f1_score, recall_score,
+    precision_score, confusion_matrix, precision_recall_curve
+)
+from lightgbm import LGBMClassifier
+from xgboost import XGBClassifier
 import joblib
-import matplotlib
-import matplotlib.pyplot as plt
-matplotlib.use("Agg")
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
-from src.universal_trainer import (
-    UniversalTrainer, DatasetProfiler,
-    ColumnTypeDetector, ComplexityDetector,
-    check_ram_safety, load_csv_chunked,
-    get_tier, TIER_LABELS, TIER_STRATEGY,
-    TIER_TINY, TIER_SMALL, TIER_MEDIUM,
-    TIER_LARGE, TIER_XLARGE, TIER_MASSIVE,
-)
-
-# ── Page config ───────────────────────────────────────────────────────────────
-st.set_page_config(
-    page_title="AutoML-X Universal Trainer",
-    page_icon="🤖",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# ── CSS ───────────────────────────────────────────────────────────────────────
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@300;400;600&display=swap');
-html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-.main { background: #0a0a0f; }
-
-.metric-card  { background:#13131a; border:1px solid #1e1e2e; border-radius:12px; padding:20px; text-align:center; }
-.metric-value { font-family:'Space Mono',monospace; font-size:2rem; font-weight:700; color:#00aaff; }
-.metric-label { font-size:.8rem; color:#666; text-transform:uppercase; letter-spacing:1px; margin-top:4px; }
-.pos-alert    { background:linear-gradient(135deg,#1a0a0a,#2a0a0a); border:1px solid #ff4444; border-radius:12px; padding:24px; text-align:center; }
-.neg-alert    { background:linear-gradient(135deg,#0a1a0a,#0a2a0a); border:1px solid #00ff88; border-radius:12px; padding:24px; text-align:center; }
-
-.col-badge   { display:inline-block; padding:2px 10px; border-radius:12px; font-size:.72rem; font-weight:600; margin:2px; font-family:'Space Mono',monospace; }
-.col-numeric { background:#0a2a1a; border:1px solid #00cc66; color:#00cc66; }
-.col-cat     { background:#1a1a0a; border:1px solid #ffcc00; color:#ffcc00; }
-.col-id      { background:#2a0a0a; border:1px solid #ff4444; color:#ff4444; }
-.col-date    { background:#0a1a2a; border:1px solid #00aaff; color:#00aaff; }
-.col-text    { background:#2a0a2a; border:1px solid #cc00ff; color:#cc00ff; }
-
-.tier-banner { border-radius:10px; padding:14px 20px; margin:10px 0; }
-.tier-0      { background:#0a1a0a; border:1px solid #00cc66; }
-.tier-1      { background:#0a1a12; border:1px solid #00cc88; }
-.tier-2      { background:#0a1220; border:1px solid #00aaff; }
-.tier-3      { background:#1a120a; border:1px solid #ffaa00; }
-.tier-4      { background:#1a0a0a; border:1px solid #ff6600; }
-.tier-5      { background:#2a0a0a; border:1px solid #ff2222; }
-
-.complexity-box { background:#13131a; border:1px solid #1e1e2e; border-radius:10px; padding:16px 20px; margin:8px 0; }
-.info-chip { display:inline-block; background:#1a1a2e; border-radius:6px; padding:3px 8px; font-size:.75rem; color:#aaa; margin:2px; font-family:'Space Mono',monospace; }
-.profile-row      { display:flex; align-items:center; padding:6px 0; border-bottom:1px solid #1a1a2a; }
-.profile-col-name { font-family:'Space Mono',monospace; font-size:.8rem; color:#ccc; flex:2; }
-.profile-col-type { flex:1; }
-.profile-col-stats{ flex:3; font-size:.78rem; color:#888; }
-</style>
-""", unsafe_allow_html=True)
+warnings.filterwarnings("ignore")
+logger = logging.getLogger(__name__)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# CACHED LOADERS
-# ══════════════════════════════════════════════════════════════════════════════
+# ─────────────────────────────────────────────────────────────────────────────
+# TIER CONSTANTS
+# ─────────────────────────────────────────────────────────────────────────────
 
-@st.cache_resource
-def load_universal_model():
-    try:
-        trainer = UniversalTrainer()
-        trainer.load("models/universal_model.pkl")
-        return trainer
-    except Exception:
-        return None
+TIER_TINY    = 0
+TIER_SMALL   = 1
+TIER_MEDIUM  = 2
+TIER_LARGE   = 3
+TIER_XLARGE  = 4
+TIER_MASSIVE = 5
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# UI HELPERS
-# ══════════════════════════════════════════════════════════════════════════════
-
-TIER_ICONS = {
-    TIER_TINY:    ("🔵", "#00cc66", "Tiny"),
-    TIER_SMALL:   ("🟢", "#00cc88", "Small"),
-    TIER_MEDIUM:  ("🔷", "#00aaff", "Medium"),
-    TIER_LARGE:   ("🟠", "#ffaa00", "Large"),
-    TIER_XLARGE:  ("🔶", "#ff6600", "XLarge"),
-    TIER_MASSIVE: ("🔴", "#ff2222", "Massive"),
+TIER_LABELS = {
+    TIER_TINY:    "Tiny    (<1K rows)",
+    TIER_SMALL:   "Small   (1K – 50K rows)",
+    TIER_MEDIUM:  "Medium  (50K – 200K rows)",
+    TIER_LARGE:   "Large   (200K – 500K rows)",
+    TIER_XLARGE:  "XLarge  (500K – 2M rows)",
+    TIER_MASSIVE: "Massive (2M+ rows)",
 }
 
-def render_tier_banner(tier: int, n_rows: int = None):
-    icon, color, name = TIER_ICONS[tier]
-    label    = TIER_LABELS[tier]
-    strategy = TIER_STRATEGY[tier]
-    rows_str = f" · {n_rows:,} rows" if n_rows else ""
-    st.markdown(f"""
-    <div class="tier-banner tier-{tier}">
-      <span style="font-size:1.1rem;font-weight:700;color:{color}">{icon} Dataset Tier: {name}</span>
-      <span style="color:#888;font-size:.85rem;margin-left:12px">{label}{rows_str}</span>
-      <div style="color:#aaa;font-size:.78rem;margin-top:4px;font-family:'Space Mono',monospace">
-        Strategy → {strategy}
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
+TIER_STRATEGY = {
+    TIER_TINY:    "All 4 models · 5-fold CV · full data",
+    TIER_SMALL:   "All 4 models · 5-fold CV · full data",
+    TIER_MEDIUM:  "All 4 models · 3-fold CV · full data",
+    TIER_LARGE:   "LR + LGB + XGB · 2-fold CV · full data",
+    TIER_XLARGE:  "LGB + LR · 2-fold CV on 200K sample · full fit",
+    TIER_MASSIVE: "LGB only · no CV · 80/20 split on 500K sample · chunked predict",
+}
+
+def get_tier(n_rows: int) -> int:
+    if n_rows < 1_000:      return TIER_TINY
+    if n_rows < 50_000:     return TIER_SMALL
+    if n_rows < 200_000:    return TIER_MEDIUM
+    if n_rows < 500_000:    return TIER_LARGE
+    if n_rows < 2_000_000:  return TIER_XLARGE
+    return TIER_MASSIVE
 
 
-def render_col_badge(col_type: str) -> str:
-    cls_map   = {"numeric":"col-numeric","categorical":"col-cat",
-                 "id_dropped":"col-id","date":"col-date","text":"col-text"}
-    label_map = {"numeric":"NUM","categorical":"CAT",
-                 "id_dropped":"ID ✕","date":"DATE ✕","text":"TEXT ✕"}
-    css   = cls_map.get(col_type, "col-numeric")
-    label = label_map.get(col_type, col_type.upper())
-    return f'<span class="col-badge {css}">{label}</span>'
+# ─────────────────────────────────────────────────────────────────────────────
+# RAM UTILITIES
+# ─────────────────────────────────────────────────────────────────────────────
+
+def get_available_ram_gb() -> float:
+    return psutil.virtual_memory().available / 1e9
+
+def get_dataframe_ram_gb(df: pd.DataFrame) -> float:
+    return df.memory_usage(deep=True).sum() / 1e9
+
+def check_ram_safety(df: pd.DataFrame) -> dict:
+    available = get_available_ram_gb()
+    df_size   = get_dataframe_ram_gb(df)
+    needed    = df_size * 4
+    safe      = needed < available * 0.8
+    tier      = get_tier(len(df))
+    return {
+        "available_gb":        round(available, 2),
+        "dataframe_gb":        round(df_size, 3),
+        "estimated_needed_gb": round(needed, 2),
+        "is_safe":             safe,
+        "tier":                TIER_LABELS[tier],
+        "strategy":            TIER_STRATEGY[tier],
+        "warning": None if safe else (
+            f"Training may need ~{needed:.1f} GB RAM but only "
+            f"{available:.1f} GB available. Tier-aware sampling will apply."
+        )
+    }
 
 
-def render_profile_table(profile: dict):
-    col_stats = profile.get("col_stats", {})
-    if not col_stats:
-        return
-    rows_html = ""
-    for col, stats in col_stats.items():
-        col_type = stats.get("type", "unknown")
-        badge    = render_col_badge(col_type)
-        if col_type == "numeric":
-            detail = (
-                f'mean={stats.get("mean","?")} &nbsp;|&nbsp; '
-                f'std={stats.get("std","?")} &nbsp;|&nbsp; '
-                f'min={stats.get("min","?")} &nbsp;|&nbsp; '
-                f'max={stats.get("max","?")} &nbsp;|&nbsp; '
-                f'skew={stats.get("skew","?")} &nbsp;|&nbsp; '
-                f'{stats.get("missing_pct",0):.1f}% missing'
+# ─────────────────────────────────────────────────────────────────────────────
+# CHUNKED CSV LOADER  ─  any file size
+# ─────────────────────────────────────────────────────────────────────────────
+
+def load_csv_chunked(
+    file_obj,
+    max_rows: int = None,          # None = load everything (up to RAM limit)
+    chunk_size: int = 100_000,
+    target_col: str = None,
+    progress_callback=None
+) -> pd.DataFrame:
+    """
+    Stream any CSV in chunks. Never crashes on large files.
+    - Stops early if RAM drops below 300 MB.
+    - Stratified-samples if file exceeds max_rows.
+    - Returns clean DataFrame ready for training.
+    """
+    chunks     = []
+    total_rows = 0
+    chunk_num  = 0
+
+    reader = pd.read_csv(file_obj, chunksize=chunk_size, low_memory=False)
+
+    for chunk in reader:
+        chunk_num  += 1
+        total_rows += len(chunk)
+
+        if progress_callback:
+            progress_callback(
+                f"Reading chunk {chunk_num} · {total_rows:,} rows so far…"
             )
-        elif col_type == "categorical":
-            top     = stats.get("top_values", {})
-            top_str = " · ".join(f"{k}({v})" for k, v in list(top.items())[:3])
-            detail  = (f'{stats.get("n_unique","?")} unique &nbsp;|&nbsp; '
-                       f'top: {top_str} &nbsp;|&nbsp; '
-                       f'{stats.get("missing_pct",0):.1f}% missing')
-        else:
-            detail = stats.get("note", col_type)
-        rows_html += f"""
-        <div class="profile-row">
-          <div class="profile-col-name">{col}</div>
-          <div class="profile-col-type">{badge}</div>
-          <div class="profile-col-stats">{detail}</div>
-        </div>"""
-    st.markdown(
-        f'<div style="max-height:420px;overflow-y:auto;padding:4px 0">{rows_html}</div>',
-        unsafe_allow_html=True
-    )
 
+        chunks.append(chunk)
 
-def render_complexity_box(cplx: dict):
-    c = cplx.get("complexity", "unknown")
-    color_map = {"linear":"#00aaff","nonlinear":"#ff8800",
-                 "mixed":"#00ff88","unknown":"#888"}
-    icon_map  = {"linear":"📐","nonlinear":"🌳","mixed":"⚖️","unknown":"❓"}
-    color = color_map.get(c, "#888")
-    icon  = icon_map.get(c, "❓")
-    lr    = cplx.get("lr_score",  "N/A")
-    lgb   = cplx.get("lgb_score", "N/A")
-    rec   = cplx.get("recommended", "All models")
-    note  = cplx.get("note", "")
-    st.markdown(f"""
-    <div class="complexity-box" style="border-color:{color}">
-      <div style="font-size:1.05rem;font-weight:700;color:{color};margin-bottom:6px">
-        {icon} Complexity: <span style="text-transform:uppercase">{c}</span>
-      </div>
-      <div style="font-size:.82rem;color:#aaa;margin-bottom:6px">{note}</div>
-      <span class="info-chip">LR AUC: {lr}</span>
-      <span class="info-chip">LGB AUC: {lgb}</span>
-      <span class="info-chip">→ {rec}</span>
-    </div>
-    """, unsafe_allow_html=True)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# SIDEBAR
-# ══════════════════════════════════════════════════════════════════════════════
-
-with st.sidebar:
-    st.markdown("## 🤖 AutoML-X")
-    st.markdown("*Universal Trainer*")
-    st.divider()
-
-    trainer_loaded = load_universal_model()
-    if trainer_loaded:
-        m = trainer_loaded.metrics
-        st.markdown("### ✅ Model Loaded")
-        st.markdown(f"**Model:** `{m.get('best_model','N/A')}`")
-        st.markdown(f"**Target:** `{trainer_loaded.target_col}`")
-        st.markdown(f"**ROC-AUC:** `{m.get('test_roc_auc',0):.5f}`")
-        st.markdown(f"**Tier:** `{m.get('tier_label','?')}`")
-        cplx = m.get("complexity", {})
-        if cplx:
-            st.markdown(f"**Complexity:** `{cplx.get('complexity','?')}`")
-    else:
-        st.info("No model trained yet.")
-
-    st.divider()
-    page = st.radio("Navigation", [
-        "📁 Upload & Configure",
-        "🚀 Train Model",
-        "📊 Results",
-        "🔍 Predict",
-        "📂 Batch Predict",
-    ], label_visibility="collapsed")
-    st.divider()
-    st.caption("AutoML-X Platform · v5.0 · Universal")
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# HEADER
-# ══════════════════════════════════════════════════════════════════════════════
-
-st.markdown("# 🤖 AutoML-X Universal Trainer")
-st.markdown("*Train any binary classification dataset — 100 rows to 2M+ rows — automatically*")
-st.divider()
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# PAGE: Upload & Configure
-# ══════════════════════════════════════════════════════════════════════════════
-
-if page == "📁 Upload & Configure":
-    st.subheader("📁 Upload Your Dataset")
-
-    st.markdown("""
-    <div style="background:#0d0d1a;border:1px solid #1e1e2e;border-radius:10px;padding:14px 18px;margin-bottom:16px">
-    <div style="font-family:'Space Mono',monospace;font-size:.72rem;color:#555;text-transform:uppercase;letter-spacing:2px;margin-bottom:10px">Dataset Size Tiers — Auto-selected Strategy</div>
-    <div style="display:flex;flex-wrap:wrap;gap:8px;font-size:.78rem">
-      <span style="color:#00cc66">🔵 <b>Tiny</b> &lt;1K · 4 models · 5-fold CV</span>
-      <span style="color:#00cc88">🟢 <b>Small</b> 1K–50K · 4 models · 5-fold CV</span>
-      <span style="color:#00aaff">🔷 <b>Medium</b> 50K–200K · 4 models · 3-fold CV</span>
-      <span style="color:#ffaa00">🟠 <b>Large</b> 200K–500K · 3 models · 2-fold CV</span>
-      <span style="color:#ff6600">🔶 <b>XLarge</b> 500K–2M · LGB+LR · 2-fold on 200K sample</span>
-      <span style="color:#ff2222">🔴 <b>Massive</b> 2M+ · LGB only · no CV · chunked predict</span>
-    </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("""
-    <div style="font-size:.75rem;color:#888;margin-bottom:12px">
-    <span class="col-badge col-numeric">NUM</span> Numeric feature &nbsp;
-    <span class="col-badge col-cat">CAT</span> Categorical &nbsp;
-    <span class="col-badge col-id">ID ✕</span> Auto-dropped &nbsp;
-    <span class="col-badge col-date">DATE ✕</span> Auto-dropped &nbsp;
-    <span class="col-badge col-text">TEXT ✕</span> Auto-dropped
-    </div>
-    """, unsafe_allow_html=True)
-
-    uploaded = st.file_uploader("Choose CSV file (any size)", type=["csv"])
-
-    if uploaded:
-        file_size_mb = uploaded.size / 1e6
-        is_large     = file_size_mb > 50
-        st.markdown(f"📎 **{uploaded.name}** — {file_size_mb:.1f} MB")
-
-        col1, col2 = st.columns(2)
-        with col1:
-            if is_large:
-                max_rows = st.slider(
-                    "Max rows to load",
-                    min_value=100_000, max_value=2_000_000,
-                    value=2_000_000, step=100_000,
-                    format="%d rows",
-                    help="Tier-aware training handles everything from here."
+        if get_available_ram_gb() < 0.3:
+            logger.warning("RAM critically low — stopping at %d rows", total_rows)
+            if progress_callback:
+                progress_callback(
+                    f"⚠️ RAM critically low — stopped at {total_rows:,} rows"
                 )
-            else:
-                max_rows = None
-                st.success(f"✅ Small file ({file_size_mb:.1f} MB) — loading everything")
-        with col2:
-            target_hint = st.text_input(
-                "Target column (for stratified sampling on huge files)",
-                value="", placeholder="e.g. Churn, fraud, label"
+            break
+
+    if not chunks:
+        raise ValueError("No data could be read from the file.")
+
+    df = pd.concat(chunks, ignore_index=True)
+    del chunks
+    gc.collect()
+
+    if progress_callback:
+        tier_lbl = TIER_LABELS[get_tier(len(df))]
+        progress_callback(
+            f"Concatenated {len(df):,} rows · {df.shape[1]} cols  [{tier_lbl}]"
+        )
+
+    # Stratified downsample only when caller supplies a hard limit
+    if max_rows and len(df) > max_rows:
+        if progress_callback:
+            progress_callback(
+                f"Sampling {max_rows:,} from {len(df):,} rows (stratified)…"
             )
-            target_hint = target_hint.strip() or None
-
-        if st.button("📂 Load Dataset", type="primary", use_container_width=True):
-            placeholder = st.empty()
-
-            def chunk_cb(msg):
-                placeholder.info(f"⏳ {msg}")
-
-            with st.spinner("Loading…"):
-                try:
-                    if is_large:
-                        df = load_csv_chunked(
-                            uploaded, max_rows=max_rows,
-                            chunk_size=100_000, target_col=target_hint,
-                            progress_callback=chunk_cb
-                        )
-                    else:
-                        df = pd.read_csv(uploaded)
-
-                    placeholder.empty()
-                    st.session_state["df"]       = df
-                    st.session_state["filename"] = uploaded.name
-                    st.session_state.pop("profile", None)
-
-                    tier = get_tier(len(df))
-                    st.success(
-                        f"✅ Loaded **{uploaded.name}** — "
-                        f"{len(df):,} rows × {df.shape[1]} cols"
-                    )
-                    render_tier_banner(tier, len(df))
-
-                except Exception as e:
-                    placeholder.empty()
-                    st.error(f"Load failed: {e}")
-
-    if "df" in st.session_state and st.session_state["df"] is not None:
-        df   = st.session_state["df"]
-        ram  = check_ram_safety(df)
-        tier = get_tier(len(df))
-
-        if not ram["is_safe"]:
-            st.warning(f"⚠️ {ram['warning']}")
-        else:
-            st.success(
-                f"✅ RAM OK · dataset {ram['dataframe_gb']:.3f} GB "
-                f"· {ram['available_gb']:.1f} GB free"
-            )
-
-        render_tier_banner(tier, len(df))
-        st.dataframe(df.head(8), use_container_width=True)
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Rows",    f"{len(df):,}")
-        c2.metric("Columns", df.shape[1])
-        c3.metric("Missing", f"{df.isnull().sum().sum():,}")
-        c4.metric("Size",    f"{ram['dataframe_gb']:.3f} GB")
-
-        st.divider()
-        st.subheader("⚙️ Configure")
-        col1, col2 = st.columns(2)
-        with col1:
-            target_col = st.selectbox("🎯 Target Column", df.columns.tolist(),
-                                      index=len(df.columns) - 1)
-            st.session_state["target_col"] = target_col
-        with col2:
-            unique_vals = df[target_col].dropna().unique().tolist()
-            pos_raw = st.selectbox("✅ Positive Value",
-                                   ["Auto-detect"] + [str(v) for v in unique_vals])
-            st.session_state["positive_label"] = (
-                None if pos_raw == "Auto-detect" else pos_raw
-            )
-
-        st.divider()
-        if st.button("🔍 Analyze Dataset", type="primary", use_container_width=True):
-            with st.spinner("Running smart analysis…"):
-                try:
-                    profiler = DatasetProfiler()
-                    profile  = profiler.profile(df, target_col)
-                    st.session_state["profile"] = profile
-                except Exception as e:
-                    st.error(f"Analysis failed: {e}")
-
-        if "profile" in st.session_state and st.session_state["profile"]:
-            profile = st.session_state["profile"]
-            st.divider()
-            st.subheader("📊 Dataset Analysis Report")
-
-            render_tier_banner(profile["tier"], profile["n_rows"])
-            st.caption(f"Training strategy: **{profile['tier_strategy']}**")
-
-            c1, c2, c3, c4, c5, c6 = st.columns(6)
-            c1.metric("Numeric",     profile["n_numeric"])
-            c2.metric("Categorical", profile["n_categorical"])
-            c3.metric("IDs Dropped", profile["n_id_dropped"])
-            c4.metric("Dates Drop.", profile["n_date_dropped"])
-            c5.metric("Missing %",   f"{profile['missing_pct']}%")
-            c6.metric("Imbalanced",  "Yes ⚠️" if profile["is_imbalanced"] else "No ✅")
-
-            st.divider()
-            ca, cb = st.columns(2)
-            with ca:
-                st.markdown("**🎯 Class Distribution**")
-                class_df = pd.DataFrame.from_dict(
-                    profile["class_counts"], orient="index", columns=["Count"]
+        if target_col and target_col in df.columns:
+            try:
+                frac = max_rows / len(df)
+                df = (
+                    df.groupby(target_col, group_keys=False)
+                      .apply(lambda x: x.sample(frac=frac, random_state=42))
+                      .reset_index(drop=True)
                 )
-                class_df["Pct"] = (
-                    class_df["Count"] / class_df["Count"].sum() * 100
-                ).round(2)
-                st.dataframe(class_df, use_container_width=True)
-                if profile["n_classes"] != 2:
-                    st.error(f"❌ {profile['n_classes']} classes — only binary supported.")
-                elif profile["is_imbalanced"]:
-                    st.warning(
-                        f"⚠️ Imbalanced: minority = "
-                        f"{profile['minority_ratio']*100:.1f}% "
-                        f"— class_weight='balanced' will be applied"
-                    )
+                if len(df) > max_rows:
+                    df = df.sample(max_rows, random_state=42).reset_index(drop=True)
+            except Exception:
+                df = df.sample(max_rows, random_state=42).reset_index(drop=True)
+        else:
+            df = df.sample(max_rows, random_state=42).reset_index(drop=True)
+
+    if progress_callback:
+        progress_callback(
+            f"✅ Loaded {len(df):,} rows × {df.shape[1]} cols  "
+            f"[{TIER_LABELS[get_tier(len(df))]}]"
+        )
+
+    return df
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SMART COLUMN TYPE DETECTOR
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ColumnTypeDetector:
+    ID_PATTERNS = [
+        "id", "_id", "id_", "uuid", "guid", "key", "index",
+        "rownum", "row_num", "record", "seq", "sequence",
+        "customerid", "userid", "accountid", "transactionid",
+        "customer_id", "user_id", "account_id", "transaction_id",
+        "phone", "mobile", "ssn", "passport",
+    ]
+    DATE_PATTERNS = [
+        "date", "time", "timestamp", "created", "updated",
+        "datetime", "dt", "year", "month", "day", "dob", "birth",
+    ]
+    TEXT_THRESHOLD  = 50
+    HIGH_CARD_RATIO = 0.5
+
+    def detect(self, df: pd.DataFrame, target_col: str = None) -> dict:
+        id_cols, date_cols, text_cols = [], [], []
+        numeric_cols, cat_cols        = [], []
+        n_rows = len(df)
+
+        for col in df.columns:
+            if col == target_col:
+                continue
+
+            col_lower = col.lower().replace(" ", "_").replace("-", "_")
+            series    = df[col].dropna()
+
+            if len(series) == 0:
+                id_cols.append(col)
+                continue
+
+            n_unique = series.nunique()
+            dtype    = series.dtype
+
+            is_id_name       = any(p in col_lower for p in self.ID_PATTERNS)
+            is_high_card_int = (
+                dtype in [np.int64, np.int32, np.float64] and
+                n_unique > min(0.9 * n_rows, 10_000)
+            )
+            is_high_card_str = (
+                dtype == object and
+                n_unique / max(n_rows, 1) > self.HIGH_CARD_RATIO and
+                n_unique > 100
+            )
+
+            if is_id_name or is_high_card_int or is_high_card_str:
+                if any(p in col_lower for p in self.DATE_PATTERNS):
+                    date_cols.append(col)
                 else:
-                    st.success("✅ Binary & balanced. Ready to train!")
-            with cb:
+                    id_cols.append(col)
+                continue
+
+            if any(p in col_lower for p in self.DATE_PATTERNS):
+                date_cols.append(col)
+                continue
+
+            if dtype == object:
                 try:
-                    fig, ax = plt.subplots(figsize=(4, 2.5))
-                    labels  = [str(k) for k in profile["class_counts"].keys()]
-                    values  = list(profile["class_counts"].values())
-                    colors  = ["#00ff88", "#ff4444"] if len(values) >= 2 else ["#00aaff"]
-                    ax.bar(labels, values, color=colors[:len(values)])
-                    ax.set_title("Class Distribution", color="white")
-                    fig.patch.set_facecolor("#13131a")
-                    ax.set_facecolor("#13131a")
-                    ax.tick_params(colors="white")
-                    for sp in ax.spines.values():
-                        sp.set_edgecolor("#333")
-                    st.pyplot(fig)
-                    plt.close()
+                    pd.to_datetime(series.head(50), infer_datetime_format=True,
+                                   errors="raise")
+                    date_cols.append(col)
+                    continue
                 except Exception:
                     pass
-
-            if profile.get("high_corr_pairs"):
-                st.divider()
-                st.markdown("**⚠️ Highly Correlated Features (>0.95)**")
-                st.dataframe(
-                    pd.DataFrame(profile["high_corr_pairs"],
-                                 columns=["Feature A", "Feature B", "Correlation"]),
-                    use_container_width=True, hide_index=True
-                )
-
-            st.divider()
-            st.markdown("**📋 Per-Column Profile**")
-            note_parts = []
-            if profile["id_cols"]:
-                note_parts.append(
-                    f'<span class="info-chip">🗑️ Dropping {len(profile["id_cols"])} ID col(s): '
-                    f'{", ".join(profile["id_cols"][:4])}'
-                    f'{"…" if len(profile["id_cols"]) > 4 else ""}</span>'
-                )
-            if profile["date_cols"]:
-                note_parts.append(
-                    f'<span class="info-chip">📅 {len(profile["date_cols"])} date col(s) dropped</span>'
-                )
-            if profile["text_cols"]:
-                note_parts.append(
-                    f'<span class="info-chip">📝 {len(profile["text_cols"])} text col(s) dropped</span>'
-                )
-            if note_parts:
-                st.markdown(" ".join(note_parts), unsafe_allow_html=True)
-                st.markdown("")
-
-            render_profile_table(profile)
-
-            num_cols = profile["numeric_cols"]
-            if num_cols:
-                st.divider()
-                st.markdown("**📈 Numeric Feature Distributions (top 8)**")
-                show_cols = num_cols[:8]
-                n    = len(show_cols)
-                nc_  = min(4, n)
-                nr_  = (n + nc_ - 1) // nc_
-                fig, axes = plt.subplots(nr_, nc_, figsize=(4 * nc_, 2.5 * nr_))
-                axes_flat = np.array(axes).flatten() if n > 1 else [axes]
-                for i, col in enumerate(show_cols):
-                    ax   = axes_flat[i]
-                    data = df[col].dropna().sample(
-                        min(50_000, df[col].notna().sum()), random_state=42
-                    )
-                    ax.hist(data, bins=30, color="#00aaff", alpha=0.7, edgecolor="none")
-                    ax.set_title(col, color="white", fontsize=8)
-                    ax.set_facecolor("#0d0d1a")
-                    ax.tick_params(colors="#666", labelsize=6)
-                    for sp in ax.spines.values():
-                        sp.set_edgecolor("#222")
-                for j in range(n, len(axes_flat)):
-                    axes_flat[j].set_visible(False)
-                fig.patch.set_facecolor("#13131a")
-                fig.tight_layout(pad=1.0)
-                st.pyplot(fig)
-                plt.close()
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# PAGE: Train Model
-# ══════════════════════════════════════════════════════════════════════════════
-
-elif page == "🚀 Train Model":
-    st.subheader("🚀 Train AutoML Model")
-
-    if "df" not in st.session_state or st.session_state.get("df") is None:
-        st.warning("⚠️ Upload a dataset first.")
-        st.stop()
-
-    df         = st.session_state["df"]
-    target_col = st.session_state.get("target_col")
-    pos_label  = st.session_state.get("positive_label")
-
-    if not target_col:
-        st.warning("⚠️ Set the target column first.")
-        st.stop()
-
-    tier = get_tier(len(df))
-    render_tier_banner(tier, len(df))
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Dataset",   st.session_state.get("filename", "Uploaded"))
-    c2.metric("Rows",      f"{len(df):,}")
-    c3.metric("Target",    target_col)
-    c4.metric("Pos.Label", pos_label or "Auto")
-
-    st.divider()
-    with st.expander("ℹ️ Auto-selected training strategy for this tier", expanded=True):
-        strategies = {
-            TIER_TINY:    "**Tiny (<1K)** → All 4 models (LR+RF+LGB+XGB) · 5-fold CV · full data.",
-            TIER_SMALL:   "**Small (1K–50K)** → All 4 models · 5-fold CV · full data.",
-            TIER_MEDIUM:  "**Medium (50K–200K)** → All 4 models · 3-fold CV · reduced n_estimators.",
-            TIER_LARGE:   "**Large (200K–500K)** → LR + LGB + XGB · 2-fold CV · RF dropped (too slow).",
-            TIER_XLARGE:  "**XLarge (500K–2M)** → LGB + LR · 2-fold CV on 200K subsample → full fit on 500K.",
-            TIER_MASSIVE: "**Massive (2M+)** → LightGBM only · no CV · 500K train sample · chunked 100K inference.",
-        }
-        st.markdown(strategies[tier])
-        st.markdown("""
-        **All tiers include:**
-        - ✅ Smart column type detection (IDs/dates/text auto-dropped)
-        - ✅ Complexity detection (linear vs non-linear → picks best models)
-        - ✅ Optimal threshold search (max F1)
-        - ✅ Chunked predict for large inference batches
-        """)
-
-    if st.button("🚀 Start Training", type="primary", use_container_width=True):
-        progress_bar = st.progress(0)
-        status_text  = st.empty()
-        log_area     = st.empty()
-        log_lines    = []
-
-        def update_progress(step, total, msg):
-            progress_bar.progress(step / total)
-            status_text.markdown(f"**Step {step}/{total}:** {msg}")
-            log_lines.append(f"[{step}/{total}] {msg}")
-            log_area.code("\n".join(log_lines[-8:]))
-
-        try:
-            trainer = UniversalTrainer(model_save_path="models/universal_model.pkl")
-            metrics = trainer.fit(
-                df=df,
-                target_col=target_col,
-                positive_label=pos_label,
-                progress_callback=update_progress
-            )
-            st.session_state["u_trainer"] = trainer
-            st.session_state["u_metrics"] = metrics
-            progress_bar.progress(1.0)
-            log_area.empty()
-            status_text.empty()
-
-            st.success(
-                f"🎉 Training complete! "
-                f"Best model: **{metrics['best_model']}** · "
-                f"ROC-AUC: **{metrics['test_roc_auc']:.5f}**"
-            )
-
-            c1, c2, c3, c4, c5 = st.columns(5)
-            c1.metric("Best Model", metrics["best_model"])
-            c2.metric("ROC-AUC",    f"{metrics['test_roc_auc']:.5f}")
-            c3.metric("F1",         f"{metrics['f1_score']:.5f}")
-            c4.metric("Recall",     f"{metrics['recall']:.5f}")
-            c5.metric("Features",   metrics.get("n_features_used", "?"))
-
-            cplx = metrics.get("complexity")
-            if cplx:
-                st.divider()
-                render_complexity_box(cplx)
-
-            dropped = metrics.get("dropped_cols", [])
-            if dropped:
-                st.info(
-                    f"🗑️ Auto-dropped {len(dropped)} col(s): "
-                    f"`{'`, `'.join(dropped[:6])}`"
-                    f"{'…' if len(dropped) > 6 else ''}"
-                )
-
-            st.info("👉 Go to **📊 Results** for full breakdown.")
-
-        except Exception as e:
-            st.error(f"Training failed: {e}")
-            import traceback
-            with st.expander("Full traceback"):
-                st.code(traceback.format_exc())
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# PAGE: Results
-# ══════════════════════════════════════════════════════════════════════════════
-
-elif page == "📊 Results":
-    trainer = st.session_state.get("u_trainer") or load_universal_model()
-    if trainer is None:
-        st.warning("⚠️ No model trained yet.")
-        st.stop()
-
-    metrics = trainer.metrics
-    st.subheader("📊 Performance Metrics")
-
-    render_tier_banner(metrics.get("tier", 0), metrics.get("n_rows_total"))
-    st.caption(f"Strategy used: **{metrics.get('tier_strategy','N/A')}**")
-    st.caption(
-        f"Trained on {metrics.get('n_train',0):,} rows · "
-        f"evaluated on {metrics.get('n_val',0):,} rows"
-    )
-
-    st.divider()
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Best Model",   metrics["best_model"])
-    c2.metric("CV ROC-AUC",   f"{metrics['cv_roc_auc']:.5f}")
-    c3.metric("Test ROC-AUC", f"{metrics['test_roc_auc']:.5f}")
-    c4.metric("F1 Score",     f"{metrics['f1_score']:.5f}")
-    c5.metric("Recall",       f"{metrics['recall']:.5f}")
-
-    cplx = metrics.get("complexity")
-    if cplx:
-        st.divider()
-        render_complexity_box(cplx)
-
-    st.divider()
-    ca, cb = st.columns(2)
-    with ca:
-        st.markdown("**🏆 Model Competition**")
-        scores_df = pd.DataFrame({
-            "Model":      list(metrics["all_cv_scores"].keys()),
-            "CV ROC-AUC": list(metrics["all_cv_scores"].values()),
-        }).sort_values("CV ROC-AUC", ascending=False).reset_index(drop=True)
-
-        def hl(row):
-            return ["background-color:#0a2a1a;color:#00ff88" if row.name == 0 else "" for _ in row]
-        st.dataframe(scores_df.style.apply(hl, axis=1),
-                     use_container_width=True, hide_index=True)
-    with cb:
-        try:
-            fig, ax = plt.subplots(figsize=(4, 3))
-            ms = scores_df.sort_values("CV ROC-AUC")
-            colors = ["#00ff88" if i == len(ms) - 1 else "#00aaff" for i in range(len(ms))]
-            ax.barh(ms["Model"], ms["CV ROC-AUC"], color=colors, height=0.5)
-            ax.set_xlim(max(0, ms["CV ROC-AUC"].min() - 0.05), 1.0)
-            ax.set_xlabel("CV ROC-AUC", color="white")
-            fig.patch.set_facecolor("#13131a")
-            ax.set_facecolor("#0d0d1a")
-            ax.tick_params(colors="white")
-            for sp in ax.spines.values():
-                sp.set_edgecolor("#222")
-            st.pyplot(fig)
-            plt.close()
-        except Exception:
-            pass
-
-    st.divider()
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Threshold", f"{metrics['threshold']:.5f}")
-    c2.metric("Precision", f"{metrics['precision']:.5f}")
-    c3.metric("Recall",    f"{metrics['recall']:.5f}")
-    c4.metric("F1",        f"{metrics['f1_score']:.5f}")
-    tp, tn = metrics["TP"], metrics["TN"]
-    fp, fn = metrics["FP"], metrics["FN"]
-    st.markdown(f"**Confusion Matrix** · TP:`{tp}` TN:`{tn}` FP:`{fp}` FN:`{fn}`")
-
-    dropped = metrics.get("dropped_cols", [])
-    if dropped:
-        st.divider()
-        st.markdown(f"**🗑️ Auto-dropped:** `{'`, `'.join(dropped)}`")
-
-    st.divider()
-    if os.path.exists("models/universal_model.pkl"):
-        with open("models/universal_model.pkl", "rb") as f:
-            st.download_button(
-                "⬇️ Download Model", f,
-                "universal_model.pkl", "application/octet-stream",
-                use_container_width=True
-            )
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# PAGE: Single Predict
-# ══════════════════════════════════════════════════════════════════════════════
-
-elif page == "🔍 Predict":
-    trainer = st.session_state.get("u_trainer") or load_universal_model()
-    if trainer is None:
-        st.warning("⚠️ Train a model first.")
-        st.stop()
-
-    st.subheader("🔍 Single Prediction")
-    features   = trainer.feature_names
-    df_ref     = st.session_state.get("df")
-    input_vals = {}
-    col_list   = st.columns(4)
-    for i, feat in enumerate(features):
-        with col_list[i % 4]:
-            if df_ref is not None and feat in df_ref.columns:
-                sample = df_ref[feat].dropna()
-                if sample.dtype in [np.float64, np.int64, np.float32, np.int32]:
-                    input_vals[feat] = st.number_input(
-                        feat, value=float(sample.median()), format="%.4f"
-                    )
+                avg_len = series.astype(str).str.len().mean()
+                if avg_len > self.TEXT_THRESHOLD and n_unique > 50:
+                    text_cols.append(col)
                 else:
-                    input_vals[feat] = st.selectbox(feat, sample.unique().tolist())
-            else:
-                input_vals[feat] = st.number_input(feat, value=0.0)
+                    cat_cols.append(col)
+                continue
 
-    if st.button("🚀 Predict", type="primary", use_container_width=True):
+            if dtype in [np.int64, np.int32, np.float64, np.float32]:
+                if n_unique <= 10 and dtype in [np.int64, np.int32]:
+                    cat_cols.append(col)
+                else:
+                    numeric_cols.append(col)
+                continue
+
+            if dtype == bool or set(series.unique()).issubset({0, 1, True, False}):
+                cat_cols.append(col)
+                continue
+
+            numeric_cols.append(col)
+
+        return {
+            "id_cols":      id_cols,
+            "date_cols":    date_cols,
+            "text_cols":    text_cols,
+            "numeric_cols": numeric_cols,
+            "cat_cols":     cat_cols,
+            "feature_cols": numeric_cols + cat_cols,
+            "dropped_cols": id_cols + text_cols + date_cols,
+        }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# COMPLEXITY DETECTOR
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ComplexityDetector:
+    def detect(self, X: pd.DataFrame, y: np.ndarray,
+               preprocessor, n_sample: int = 5_000) -> dict:
         try:
-            probability = float(trainer.predict_proba(pd.DataFrame([input_vals]))[0])
-            prediction  = int(probability >= trainer.threshold)
-            t           = trainer.threshold
-            if prediction == 1:
-                st.markdown(f"""<div class="pos-alert">
-                    <div style="font-size:3rem">⚠️</div>
-                    <div style="font-size:1.5rem;font-weight:700;color:#ff4444">POSITIVE</div>
-                    <div style="font-size:2.5rem;font-weight:700;color:#ff4444;font-family:monospace">{probability*100:.2f}%</div>
-                    <div style="color:#888">Probability | Threshold: {t:.5f}</div>
-                </div>""", unsafe_allow_html=True)
-            else:
-                st.markdown(f"""<div class="neg-alert">
-                    <div style="font-size:3rem">✅</div>
-                    <div style="font-size:1.5rem;font-weight:700;color:#00ff88">NEGATIVE</div>
-                    <div style="font-size:2.5rem;font-weight:700;color:#00ff88;font-family:monospace">{probability*100:.2f}%</div>
-                    <div style="color:#888">Probability | Threshold: {t:.5f}</div>
-                </div>""", unsafe_allow_html=True)
+            n   = min(n_sample, len(X))
+            idx = np.random.RandomState(42).choice(len(X), n, replace=False)
+            Xs, ys = X.iloc[idx], y[idx]
+            X_tr, X_va, y_tr, y_va = train_test_split(
+                Xs, ys, test_size=0.3, random_state=42, stratify=ys
+            )
+            lr_pipe = Pipeline([("pre", preprocessor),
+                                ("clf", LogisticRegression(max_iter=500, n_jobs=-1))])
+            lgb_pipe = Pipeline([("pre", preprocessor),
+                                 ("clf", LGBMClassifier(n_estimators=50,
+                                          random_state=42, verbose=-1, n_jobs=-1))])
+            lr_pipe.fit(X_tr, y_tr)
+            lgb_pipe.fit(X_tr, y_tr)
+            lr_auc  = roc_auc_score(y_va, lr_pipe.predict_proba(X_va)[:,1])
+            lgb_auc = roc_auc_score(y_va, lgb_pipe.predict_proba(X_va)[:,1])
+            gap     = lgb_auc - lr_auc
+            if   gap >  0.05: complexity, rec = "nonlinear", "LightGBM / RandomForest"
+            elif gap < -0.03: complexity, rec = "linear",    "LogisticRegression"
+            else:             complexity, rec = "mixed",     "All models"
+            return {
+                "complexity":  complexity,
+                "recommended": rec,
+                "lr_score":    round(lr_auc, 4),
+                "lgb_score":   round(lgb_auc, 4),
+                "gap":         round(gap, 4),
+                "note": (f"LGB({lgb_auc:.3f}) vs LR({lr_auc:.3f}) "
+                         f"gap={gap:+.3f} → {complexity}"),
+            }
         except Exception as e:
-            st.error(f"Prediction failed: {e}")
+            return {"complexity": "unknown", "recommended": "All models",
+                    "note": f"Auto-detect failed: {e}",
+                    "lr_score": None, "lgb_score": None, "gap": None}
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# PAGE: Batch Predict
-# ══════════════════════════════════════════════════════════════════════════════
+# ─────────────────────────────────────────────────────────────────────────────
+# DATASET PROFILER
+# ─────────────────────────────────────────────────────────────────────────────
 
-elif page == "📂 Batch Predict":
-    trainer = st.session_state.get("u_trainer") or load_universal_model()
-    if trainer is None:
-        st.warning("⚠️ Train a model first.")
-        st.stop()
+class DatasetProfiler:
+    def profile(self, df: pd.DataFrame, target_col: str) -> dict:
+        if target_col not in df.columns:
+            raise ValueError(f"Target column '{target_col}' not found.")
 
-    st.subheader("📂 Batch Prediction")
-    st.info(
-        f"Required features: `{'`, `'.join(trainer.feature_names[:5])}`… "
-        f"({len(trainer.feature_names)} total) · "
-        f"Chunked prediction (100K rows/chunk) — safe for any file size"
-    )
+        X  = df.drop(columns=[target_col])
+        y  = df[target_col]
 
-    uploaded = st.file_uploader("Upload CSV (any size)", type=["csv"])
-    if uploaded:
-        file_size_mb = uploaded.size / 1e6
-        if file_size_mb > 50:
-            st.info(f"⚡ Large file ({file_size_mb:.0f} MB) — chunked loader active")
-            with st.spinner("Loading…"):
-                df_new = load_csv_chunked(uploaded, max_rows=None, chunk_size=100_000)
+        detector  = ColumnTypeDetector()
+        col_types = detector.detect(df, target_col)
+
+        num_cols  = col_types["numeric_cols"]
+        cat_cols  = col_types["cat_cols"]
+        id_cols   = col_types["id_cols"]
+        date_cols = col_types["date_cols"]
+        text_cols = col_types["text_cols"]
+
+        class_counts   = y.value_counts()
+        n_classes      = len(class_counts)
+        minority_ratio = class_counts.min() / max(len(y), 1)
+        missing_pct    = round(X.isnull().sum().sum() / max(X.size, 1) * 100, 2)
+
+        # Per-column stats on a sample (fast on huge datasets)
+        sample_df = df.sample(min(50_000, len(df)), random_state=42)
+        col_stats = {}
+
+        for col in num_cols:
+            s = sample_df[col].dropna()
+            col_stats[col] = {
+                "type":        "numeric",
+                "missing":     int(df[col].isnull().sum()),
+                "missing_pct": round(df[col].isnull().mean() * 100, 1),
+                "mean":        round(float(s.mean()),    4) if len(s) else None,
+                "std":         round(float(s.std()),     4) if len(s) else None,
+                "min":         round(float(s.min()),     4) if len(s) else None,
+                "max":         round(float(s.max()),     4) if len(s) else None,
+                "median":      round(float(s.median()),  4) if len(s) else None,
+                "skew":        round(float(s.skew()),    3) if len(s) > 2 else None,
+            }
+        for col in cat_cols:
+            s  = sample_df[col].dropna()
+            vc = s.value_counts()
+            col_stats[col] = {
+                "type":        "categorical",
+                "missing":     int(df[col].isnull().sum()),
+                "missing_pct": round(df[col].isnull().mean() * 100, 1),
+                "n_unique":    int(df[col].nunique()),
+                "top_values":  vc.head(5).to_dict(),
+            }
+        for col in id_cols:
+            col_stats[col] = {"type": "id_dropped",
+                              "note": "Auto-detected as ID — will be dropped",
+                              "n_unique": int(df[col].nunique())}
+        for col in date_cols:
+            col_stats[col] = {"type": "date",
+                              "note": "Detected as date — will be dropped"}
+        for col in text_cols:
+            col_stats[col] = {"type": "text",
+                              "note": "Detected as free text — will be dropped"}
+
+        # High-correlation check
+        high_corr_pairs = []
+        if len(num_cols) >= 2:
+            try:
+                corr  = sample_df[num_cols].corr().abs()
+                upper = corr.where(np.triu(np.ones(corr.shape), k=1).astype(bool))
+                pairs = [
+                    (c, r, round(upper.loc[r, c], 3))
+                    for c in upper.columns for r in upper.index
+                    if pd.notna(upper.loc[r, c]) and upper.loc[r, c] > 0.95
+                ]
+                high_corr_pairs = sorted(pairs, key=lambda x: -x[2])[:5]
+            except Exception:
+                pass
+
+        n_rows = len(df)
+        tier   = get_tier(n_rows)
+
+        return {
+            "n_rows":            n_rows,
+            "n_cols":            len(X.columns),
+            "tier":              tier,
+            "tier_label":        TIER_LABELS[tier],
+            "tier_strategy":     TIER_STRATEGY[tier],
+            "n_numeric":         len(num_cols),
+            "n_categorical":     len(cat_cols),
+            "n_id_dropped":      len(id_cols),
+            "n_date_dropped":    len(date_cols),
+            "n_text_dropped":    len(text_cols),
+            "numeric_cols":      num_cols,
+            "categorical_cols":  cat_cols,
+            "id_cols":           id_cols,
+            "date_cols":         date_cols,
+            "text_cols":         text_cols,
+            "high_cardinality_cols": id_cols,   # backward compat
+            "target_col":        target_col,
+            "n_classes":         n_classes,
+            "class_counts":      class_counts.to_dict(),
+            "minority_ratio":    round(float(minority_ratio), 6),
+            "is_imbalanced":     minority_ratio < 0.2,
+            "missing_pct":       missing_pct,
+            "has_missing":       missing_pct > 0,
+            "high_corr_pairs":   high_corr_pairs,
+            "col_stats":         col_stats,
+            "size_gb":           round(get_dataframe_ram_gb(df), 3),
+            "needs_sampling":    n_rows > 500_000,
+        }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PREPROCESSOR
+# ─────────────────────────────────────────────────────────────────────────────
+
+def build_preprocessor(num_cols: list, cat_cols: list) -> ColumnTransformer:
+    transformers = []
+    if num_cols:
+        transformers.append(("num", Pipeline([
+            ("imputer", SimpleImputer(strategy="median")),
+            ("scaler",  StandardScaler()),
+        ]), num_cols))
+    if cat_cols:
+        transformers.append(("cat", Pipeline([
+            ("imputer", SimpleImputer(strategy="most_frequent")),
+            ("encoder", OneHotEncoder(handle_unknown="ignore",
+                                      sparse_output=False, max_categories=50)),
+        ]), cat_cols))
+    if not transformers:
+        raise ValueError("No usable columns after type detection.")
+    return ColumnTransformer(transformers=transformers)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TIER-AWARE MODEL + CV FACTORY
+# ─────────────────────────────────────────────────────────────────────────────
+
+def get_models_for_tier(tier: int, is_imbalanced: bool,
+                        complexity: str) -> dict:
+    bal  = is_imbalanced
+    nonl = complexity in ("nonlinear", "mixed", "unknown")
+
+    # ── Tier 0 & 1: Tiny / Small ─────────────────────────────────────────────
+    if tier <= TIER_SMALL:
+        return {
+            "LogisticRegression": LogisticRegression(
+                max_iter=3000, class_weight="balanced" if bal else None, n_jobs=-1),
+            "RandomForest": RandomForestClassifier(
+                n_estimators=300, class_weight="balanced" if bal else None,
+                n_jobs=-1, random_state=42),
+            "LightGBM": LGBMClassifier(
+                n_estimators=300, is_unbalance=bal, random_state=42,
+                n_jobs=-1, verbose=-1),
+            "XGBoost": XGBClassifier(
+                n_estimators=200, random_state=42, n_jobs=-1,
+                eval_metric="auc", verbosity=0),
+        }
+
+    # ── Tier 2: Medium ────────────────────────────────────────────────────────
+    if tier == TIER_MEDIUM:
+        return {
+            "LogisticRegression": LogisticRegression(
+                max_iter=2000, class_weight="balanced" if bal else None, n_jobs=-1),
+            "RandomForest": RandomForestClassifier(
+                n_estimators=150, class_weight="balanced" if bal else None,
+                n_jobs=-1, random_state=42, max_depth=15),
+            "LightGBM": LGBMClassifier(
+                n_estimators=200, is_unbalance=bal, random_state=42,
+                n_jobs=-1, verbose=-1),
+            "XGBoost": XGBClassifier(
+                n_estimators=150, random_state=42, n_jobs=-1,
+                eval_metric="auc", verbosity=0),
+        }
+
+    # ── Tier 3: Large ─────────────────────────────────────────────────────────
+    if tier == TIER_LARGE:
+        return {
+            "LogisticRegression": LogisticRegression(
+                max_iter=1000, class_weight="balanced" if bal else None, n_jobs=-1),
+            "LightGBM": LGBMClassifier(
+                n_estimators=200, is_unbalance=bal, random_state=42,
+                n_jobs=-1, verbose=-1, num_leaves=63),
+            "XGBoost": XGBClassifier(
+                n_estimators=100, random_state=42, n_jobs=-1,
+                eval_metric="auc", verbosity=0, tree_method="hist"),
+        }
+
+    # ── Tier 4: XLarge (500K–2M) ─────────────────────────────────────────────
+    if tier == TIER_XLARGE:
+        return {
+            "LightGBM": LGBMClassifier(
+                n_estimators=300, is_unbalance=bal, random_state=42,
+                n_jobs=-1, verbose=-1, num_leaves=127,
+                learning_rate=0.05, subsample=0.8, colsample_bytree=0.8),
+            "LogisticRegression": LogisticRegression(
+                max_iter=500, class_weight="balanced" if bal else None,
+                solver="saga", n_jobs=-1),
+        }
+
+    # ── Tier 5: Massive (2M+) ─────────────────────────────────────────────────
+    return {
+        "LightGBM": LGBMClassifier(
+            n_estimators=500, is_unbalance=bal, random_state=42,
+            n_jobs=-1, verbose=-1, num_leaves=63,
+            learning_rate=0.05, subsample=0.6, colsample_bytree=0.7,
+            max_bin=127),
+    }
+
+
+def get_cv_config(tier: int) -> dict:
+    """
+    Returns:
+      use_cv     – whether to run cross_val_score
+      folds      – number of CV folds
+      cv_sample  – if set, subsample X to this size before CV
+    """
+    configs = {
+        TIER_TINY:    {"use_cv": True,  "folds": 5, "cv_sample": None},
+        TIER_SMALL:   {"use_cv": True,  "folds": 5, "cv_sample": None},
+        TIER_MEDIUM:  {"use_cv": True,  "folds": 3, "cv_sample": None},
+        TIER_LARGE:   {"use_cv": True,  "folds": 2, "cv_sample": None},
+        TIER_XLARGE:  {"use_cv": True,  "folds": 2, "cv_sample": 200_000},
+        TIER_MASSIVE: {"use_cv": False, "folds": 0, "cv_sample": None},
+    }
+    return configs[tier]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# UNIVERSAL TRAINER
+# ─────────────────────────────────────────────────────────────────────────────
+
+class UniversalTrainer:
+    """
+    Train ANY binary classification dataset, any size, automatically.
+
+    Tier 0  <1K       → full grid · 5-fold CV · no sampling
+    Tier 1  1K–50K    → full grid · 5-fold CV
+    Tier 2  50K–200K  → full grid · 3-fold CV
+    Tier 3  200K–500K → 3-model  · 2-fold CV
+    Tier 4  500K–2M   → 2-model  · 2-fold CV on 200K subsample
+    Tier 5  2M+       → LGB only · no CV · 500K train sample · chunked predict
+    """
+
+    def __init__(self, model_save_path: str = "models/universal_model.pkl"):
+        self.model_save_path  = model_save_path
+        self.best_pipeline    = None
+        self.best_model_name  = None
+        self.best_score       = None
+        self.threshold        = 0.5
+        self.feature_names    = None
+        self.target_col       = None
+        self.positive_label   = None
+        self.label_encoder    = None
+        self.profile          = None
+        self.col_types        = None
+        self.complexity_info  = None
+        self.tier             = None
+        self.all_scores       = {}
+        self.metrics          = {}
+
+    # ─── helpers ─────────────────────────────────────────────────────────────
+
+    def _encode_target(self, y: pd.Series, positive_label) -> np.ndarray:
+        unique_vals = y.unique()
+        if set(unique_vals).issubset({0, 1}):
+            return y.values.astype(int)
+        if positive_label is not None:
+            try:
+                pos = type(y.iloc[0])(positive_label)
+            except Exception:
+                pos = positive_label
+            return (y == pos).astype(int).values
+        le = LabelEncoder()
+        encoded = le.fit_transform(y)
+        self.label_encoder = le
+        return encoded
+
+    def _stratified_sample(self, X: pd.DataFrame, y: np.ndarray,
+                           max_rows: int) -> tuple:
+        if len(X) <= max_rows:
+            return X, y
+        rng     = np.random.RandomState(42)
+        classes = np.unique(y)
+        idxs    = []
+        for cls in classes:
+            cls_idx = np.where(y == cls)[0]
+            n_take  = max(1, int(max_rows * len(cls_idx) / len(y)))
+            idxs.extend(rng.choice(cls_idx, min(n_take, len(cls_idx)), replace=False))
+        idxs = np.array(idxs)
+        rng.shuffle(idxs)
+        idxs = idxs[:max_rows]
+        return X.iloc[idxs].reset_index(drop=True), y[idxs]
+
+    # ─── fit ─────────────────────────────────────────────────────────────────
+
+    def fit(
+        self,
+        df: pd.DataFrame,
+        target_col: str,
+        positive_label=None,
+        test_size: float = 0.2,
+        sample_if_large: bool = True,   # kept for API compat
+        progress_callback=None
+    ) -> dict:
+
+        def _p(step, total, msg):
+            logger.info("[%d/%d] %s", step, total, msg)
+            if progress_callback:
+                progress_callback(step, total, msg)
+
+        T = 8   # total steps
+
+        # ── 1  Profile ────────────────────────────────────────────────────────
+        _p(1, T, "Profiling dataset & detecting column types…")
+        profiler     = DatasetProfiler()
+        self.profile = profiler.profile(df, target_col)
+        self.tier    = self.profile["tier"]
+        tier_lbl     = TIER_LABELS[self.tier]
+        self.target_col     = target_col
+        self.positive_label = positive_label
+
+        _p(1, T, f"Tier detected: {tier_lbl}  ·  strategy: {TIER_STRATEGY[self.tier]}")
+
+        if self.profile["n_classes"] != 2:
+            raise ValueError(
+                f"Binary classification only. "
+                f"Found {self.profile['n_classes']} classes."
+            )
+
+        # ── 2  Prepare features ───────────────────────────────────────────────
+        _p(2, T, "Dropping IDs / dates / text columns…")
+        drop_cols = (
+            self.profile["id_cols"] +
+            self.profile["date_cols"] +
+            self.profile["text_cols"]
+        )
+        X = df.drop(columns=[target_col] + drop_cols, errors="ignore")
+        y = self._encode_target(df[target_col], positive_label)
+
+        num_cols = [c for c in self.profile["numeric_cols"]    if c in X.columns]
+        cat_cols = [c for c in self.profile["categorical_cols"] if c in X.columns]
+        self.feature_names = list(X.columns)
+
+        if not self.feature_names:
+            raise ValueError("No usable features after type detection.")
+
+        _p(2, T, f"{len(num_cols)} numeric + {len(cat_cols)} categorical features"
+                 f" | dropped {len(drop_cols)} cols")
+
+        # ── 3  Preprocessor ───────────────────────────────────────────────────
+        _p(3, T, "Building preprocessing pipeline…")
+        preprocessor = build_preprocessor(num_cols, cat_cols)
+
+        # ── 4  Complexity detection (always fast — 5K sample) ─────────────────
+        _p(4, T, "Detecting problem complexity (linear vs non-linear)…")
+        detector          = ComplexityDetector()
+        self.complexity_info = detector.detect(X, y, preprocessor)
+        complexity         = self.complexity_info["complexity"]
+        _p(4, T, f"Complexity → {complexity}  |  {self.complexity_info['note']}")
+
+        # ── 5  Tier-aware split ───────────────────────────────────────────────
+        _p(5, T, f"Splitting data [{tier_lbl}]…")
+
+        if self.tier == TIER_MASSIVE:
+            # Sample 500K for training; evaluation on a 100K held-out set
+            X_s, y_s = self._stratified_sample(X, y, max_rows=500_000)
+            X_train, X_val, y_train, y_val = train_test_split(
+                X_s, y_s, test_size=test_size, random_state=42, stratify=y_s
+            )
+            del X_s, y_s, X, y
+            gc.collect()
+            _p(5, T, f"Massive: training on {len(X_train):,} rows "
+                     f"(stratified 500K sample from {self.profile['n_rows']:,})")
+
+        elif self.tier == TIER_XLARGE:
+            X_s, y_s = self._stratified_sample(X, y, max_rows=500_000)
+            X_train, X_val, y_train, y_val = train_test_split(
+                X_s, y_s, test_size=test_size, random_state=42, stratify=y_s
+            )
+            del X_s, y_s, X, y
+            gc.collect()
+            _p(5, T, f"XLarge: training on {len(X_train):,} rows "
+                     f"(stratified 500K sample)")
+
         else:
-            df_new = pd.read_csv(uploaded)
+            X_train, X_val, y_train, y_val = train_test_split(
+                X, y, test_size=test_size, random_state=42, stratify=y
+            )
+            if self.tier >= TIER_LARGE:
+                del X, y
+                gc.collect()
+            _p(5, T, f"Train {len(X_train):,} · Val {len(X_val):,}")
 
-        tier_inf = get_tier(len(df_new))
-        st.success(f"Loaded {len(df_new):,} rows")
-        render_tier_banner(tier_inf, len(df_new))
+        # ── 6  Model training (tier-aware) ────────────────────────────────────
+        _p(6, T, "Training models…")
+        models  = get_models_for_tier(self.tier, self.profile["is_imbalanced"], complexity)
+        cv_cfg  = get_cv_config(self.tier)
+        use_cv  = cv_cfg["use_cv"]
+        n_folds = cv_cfg["folds"]
+        cv_samp = cv_cfg["cv_sample"]
 
-        X_raw = df_new.drop(columns=[trainer.target_col], errors="ignore")
+        best_score, best_pipeline, best_name = -np.inf, None, None
 
-        if st.button("🚀 Run Batch Prediction", type="primary", use_container_width=True):
-            with st.spinner(f"Predicting {len(X_raw):,} rows (chunked 100K/batch)…"):
+        for i, (name, model) in enumerate(models.items(), 1):
+            _p(6, T, f"  [{i}/{len(models)}] {name}…")
+
+            pipeline = Pipeline([
+                ("preprocessor", preprocessor),
+                ("model",        model),
+            ])
+
+            if use_cv:
+                Xcv = X_train
+                ycv = y_train
+                if cv_samp and len(X_train) > cv_samp:
+                    Xcv, ycv = self._stratified_sample(X_train, y_train, cv_samp)
                 try:
-                    probabilities = trainer.predict_proba(X_raw)
-                    predictions   = (probabilities >= trainer.threshold).astype(int)
-
-                    results = df_new.copy()
-                    results["probability_%"]   = (probabilities * 100).round(4)
-                    results["predicted_class"] = predictions
-                    results["label"] = [
-                        "POSITIVE" if p == 1 else "NEGATIVE" for p in predictions
-                    ]
-
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric("Total",    f"{len(results):,}")
-                    c2.metric("Positive", f"{int(predictions.sum()):,}")
-                    c3.metric("Rate",     f"{predictions.mean()*100:.2f}%")
-
-                    st.dataframe(results, use_container_width=True)
-                    st.download_button(
-                        "⬇️ Download Predictions",
-                        results.to_csv(index=False).encode(),
-                        "predictions.csv", "text/csv",
-                        use_container_width=True
+                    skf    = StratifiedKFold(n_splits=n_folds, shuffle=True,
+                                             random_state=42)
+                    scores = cross_val_score(
+                        pipeline, Xcv, ycv,
+                        cv=skf, scoring="roc_auc", n_jobs=-1
                     )
+                    score  = float(np.mean(scores))
+                    logger.info("%s CV(%d) AUC: %.5f ±%.5f",
+                                name, n_folds, score, float(np.std(scores)))
                 except Exception as e:
-                    st.error(f"Batch prediction failed: {e}")
+                    logger.warning("%s CV failed: %s", name, e)
+                    score = 0.0
+
+                self.all_scores[name] = round(score, 5)
+                if score > best_score:
+                    best_score, best_pipeline, best_name = score, pipeline, name
+
+            else:
+                # Massive tier: no CV, fit directly
+                try:
+                    pipeline.fit(X_train, y_train)
+                    score = roc_auc_score(
+                        y_val, pipeline.predict_proba(X_val)[:,1]
+                    )
+                    logger.info("%s (no-CV) val AUC: %.5f", name, score)
+                except Exception as e:
+                    logger.warning("%s fit failed: %s", name, e)
+                    score = 0.0
+                self.all_scores[name] = round(score, 5)
+                if score > best_score:
+                    best_score, best_pipeline, best_name = score, pipeline, name
+
+        logger.info("Best: %s (score=%.5f)", best_name, best_score)
+
+        # Final fit on full train set (CV tiers only)
+        if use_cv:
+            _p(6, T, f"Final fit: {best_name} on {len(X_train):,} rows…")
+            best_pipeline.fit(X_train, y_train)
+
+        self.best_pipeline   = best_pipeline
+        self.best_model_name = best_name
+        self.best_score      = best_score
+
+        # ── 7  Threshold optimisation ─────────────────────────────────────────
+        _p(7, T, "Optimising decision threshold (max F1)…")
+
+        # Use at most 200K for threshold search (fast)
+        if len(X_val) > 200_000:
+            Xvs, yvs = self._stratified_sample(X_val, y_val, 200_000)
+        else:
+            Xvs, yvs = X_val, y_val
+
+        y_proba = best_pipeline.predict_proba(Xvs)[:,1]
+        prec, rec, thresholds = precision_recall_curve(yvs, y_proba)
+        pr, re = prec[:-1], rec[:-1]
+        f1s    = (2 * pr * re) / (pr + re + 1e-8)
+        self.threshold = float(thresholds[np.argmax(f1s)]) if len(thresholds) > 0 else 0.5
+        _p(7, T, f"Optimal threshold: {self.threshold:.5f}")
+
+        # ── 8  Evaluate ───────────────────────────────────────────────────────
+        _p(8, T, "Evaluating…")
+        y_pred = (y_proba >= self.threshold).astype(int)
+        cm     = confusion_matrix(yvs, y_pred)
+        tn, fp, fn, tp = cm.ravel() if cm.shape == (2, 2) else (0, 0, 0, 0)
+
+        self.metrics = {
+            "best_model":      best_name,
+            "cv_roc_auc":      round(best_score, 5),
+            "test_roc_auc":    round(roc_auc_score(yvs, y_proba), 5),
+            "f1_score":        round(f1_score(yvs, y_pred), 5),
+            "recall":          round(recall_score(yvs, y_pred), 5),
+            "precision":       round(precision_score(yvs, y_pred), 5),
+            "threshold":       round(self.threshold, 5),
+            "TP": int(tp), "TN": int(tn), "FP": int(fp), "FN": int(fn),
+            "all_cv_scores":   self.all_scores,
+            "complexity":      self.complexity_info,
+            "dropped_cols":    drop_cols,
+            "n_features_used": len(self.feature_names),
+            "tier":            self.tier,
+            "tier_label":      tier_lbl,
+            "tier_strategy":   TIER_STRATEGY[self.tier],
+            "n_train":         len(X_train),
+            "n_val":           len(Xvs),
+            "n_rows_total":    self.profile["n_rows"],
+        }
+
+        logger.info(
+            "Done · ROC-AUC=%.5f · F1=%.5f · Recall=%.5f",
+            self.metrics["test_roc_auc"],
+            self.metrics["f1_score"],
+            self.metrics["recall"],
+        )
+
+        self.save()
+        return self.metrics
+
+    # ── Predict (chunked for massive inference) ───────────────────────────────
+
+    def predict_proba(self, X: pd.DataFrame,
+                      chunk_size: int = 100_000) -> np.ndarray:
+        if self.best_pipeline is None:
+            raise ValueError("Model not trained. Call fit() first.")
+        X = X.reindex(columns=self.feature_names, fill_value=0)
+        if len(X) <= chunk_size:
+            return self.best_pipeline.predict_proba(X)[:,1]
+        results = []
+        for start in range(0, len(X), chunk_size):
+            results.append(
+                self.best_pipeline.predict_proba(X.iloc[start:start+chunk_size])[:,1]
+            )
+        return np.concatenate(results)
+
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        return (self.predict_proba(X) >= self.threshold).astype(int)
+
+    # ── Save / Load ───────────────────────────────────────────────────────────
+
+    def save(self, path: str = None):
+        path = path or self.model_save_path
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        joblib.dump({
+            "pipeline":        self.best_pipeline,
+            "threshold":       self.threshold,
+            "feature_names":   self.feature_names,
+            "target_col":      self.target_col,
+            "positive_label":  self.positive_label,
+            "best_model_name": self.best_model_name,
+            "metrics":         self.metrics,
+            "profile":         self.profile,
+            "col_types":       self.col_types,
+            "complexity_info": self.complexity_info,
+            "all_scores":      self.all_scores,
+            "label_encoder":   self.label_encoder,
+            "tier":            self.tier,
+        }, path)
+        logger.info("Model saved → %s", path)
+
+    def load(self, path: str = None):
+        path = path or self.model_save_path
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Model not found: {path}")
+        pkg = joblib.load(path)
+        self.best_pipeline    = pkg["pipeline"]
+        self.threshold        = pkg["threshold"]
+        self.feature_names    = pkg["feature_names"]
+        self.target_col       = pkg["target_col"]
+        self.positive_label   = pkg["positive_label"]
+        self.best_model_name  = pkg["best_model_name"]
+        self.metrics          = pkg["metrics"]
+        self.profile          = pkg["profile"]
+        self.col_types        = pkg.get("col_types")
+        self.complexity_info  = pkg.get("complexity_info")
+        self.all_scores       = pkg["all_scores"]
+        self.label_encoder    = pkg.get("label_encoder")
+        self.tier             = pkg.get("tier")
+        return self

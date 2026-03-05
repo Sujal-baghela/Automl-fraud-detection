@@ -1,41 +1,98 @@
 version: "3.9"
 
+# ══════════════════════════════════════════════════════════════════
+# docker-compose.yml  —  LOCAL DEVELOPMENT
+#
+# Services:
+#   fraud      →  http://localhost:8501   (Fraud Detection — local only)
+#   universal  →  http://localhost:8502   (Universal Trainer — mirrors HF)
+#
+# Usage:
+#   docker compose up --build            # start both
+#   docker compose up fraud              # fraud only
+#   docker compose up universal          # universal only
+# ══════════════════════════════════════════════════════════════════
+
 services:
 
-  # ── AutoML-X Fraud Detection API ──────────────────────────
-  api:
+  # ── Fraud Detection (local only, never on HF) ────────────────────
+  fraud:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.local
 
-    container_name: automl-x-api
+    container_name: automl-x-fraud
 
     ports:
-      - "8000:8000"       # host:container — access at localhost:8000
+      - "8501:8501"       # http://localhost:8501
 
     volumes:
-      # Mount models folder so the trained model is accessible
-      # inside the container without rebuilding the image.
-      # Train on your machine → model auto-available in container.
-      - ./models:/app/models
-
-      # Mount reports so generated plots are saved to your machine
+      - ./models:/app/models       # live model reload without rebuild
       - ./reports:/app/reports
-
-      # Mount logs so you can read them outside the container
       - ./logs:/app/logs
+      - ./src:/app/src              # hot-reload source code
 
     environment:
-      - PYTHONUNBUFFERED=1      # show logs in real time
+      - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
+      - STREAMLIT_APP=app_fraud_local.py
+      - STREAMLIT_PORT=8501
 
-    restart: unless-stopped     # auto-restart on crash
+    command: >
+      streamlit run app_fraud_local.py
+        --server.port=8501
+        --server.address=0.0.0.0
+        --server.headless=true
+        --browser.gatherUsageStats=false
+        --server.fileWatcherType=auto
+
+    restart: unless-stopped
 
     healthcheck:
       test: ["CMD", "python", "-c",
-             "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
+             "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 15s         # give API time to load the model on startup
-      
+      start_period: 20s
+
+  # ── Universal Trainer (mirrors HF Space — runs locally too) ──────
+  universal:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+
+    container_name: automl-x-universal
+
+    ports:
+      - "8502:8502"       # http://localhost:8502
+
+    volumes:
+      - ./models:/app/models
+      - ./reports:/app/reports
+      - ./logs:/app/logs
+      - ./src:/app/src
+
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+      - STREAMLIT_APP=app_universal.py
+      - STREAMLIT_PORT=8502
+
+    command: >
+      streamlit run app_universal.py
+        --server.port=8502
+        --server.address=0.0.0.0
+        --server.headless=true
+        --browser.gatherUsageStats=false
+        --server.fileWatcherType=auto
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8502/_stcore/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s

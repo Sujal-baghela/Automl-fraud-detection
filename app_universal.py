@@ -15,7 +15,10 @@ import matplotlib
 import matplotlib.pyplot as plt
 matplotlib.use("Agg")
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+# Ensure /app is on the path so `src.universal_trainer` resolves correctly
+_app_dir = os.path.dirname(os.path.abspath(__file__))
+if _app_dir not in sys.path:
+    sys.path.insert(0, _app_dir)
 
 from src.universal_trainer import (
     UniversalTrainer, DatasetProfiler,

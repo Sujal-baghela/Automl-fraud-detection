@@ -1,0 +1,43 @@
+# ══════════════════════════════════════════════════════════════════
+# Dockerfile.local  —  LOCAL DEVELOPMENT ONLY
+#
+# Runs TWO apps simultaneously via supervisord:
+#   • app_fraud_local.py   →  localhost:8501  (Fraud Detection)
+#   • app_universal.py     →  localhost:8502  (Universal Trainer)
+#
+# Usage:
+#   docker compose up --build
+# ══════════════════════════════════════════════════════════════════
+
+FROM python:3.11-slim
+
+LABEL maintainer="Sujal Baghela"
+
+# ── System dependencies ───────────────────────────────────────────
+RUN apt-get update && apt-get install -y \
+    libgomp1 \
+    supervisor \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Non-root user ─────────────────────────────────────────────────
+RUN useradd -m -u 1000 appuser
+
+WORKDIR /app
+
+# ── Python dependencies ───────────────────────────────────────────
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# ── Copy project files ────────────────────────────────────────────
+COPY . .
+
+# ── Directories & permissions ─────────────────────────────────────
+RUN mkdir -p models logs /tmp/streamlit_fraud /tmp/streamlit_universal \
+    && chown -R appuser:appuser /app \
+    && chmod +x start_local.sh
+
+USER appuser
+
+EXPOSE 8501 8502
+
+CMD ["supervisord", "-c", "supervisord.local.conf"]
