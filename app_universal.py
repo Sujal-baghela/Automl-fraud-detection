@@ -762,7 +762,15 @@ elif page == "03 -- Train":
             metrics = trainer.fit(df=df,target_col=target_col,positive_label=pos_label,
                                   test_size=test_size,clean_data=clean_data,
                                   outlier_method=outlier_method,progress_callback=on_progress)
-            st.session_state["u_trainer"] = trainer; st.session_state["u_metrics"] = metrics
+            st.session_state["u_trainer"]       = trainer
+            st.session_state["u_metrics"]       = metrics
+            # BUG 1 FIX: persist all trainer state explicitly so pages 04-06
+            # never go blank — Streamlit re-runs the whole script on every click
+            st.session_state["train_done"]      = True
+            st.session_state["best_model_name"] = trainer.best_model_name
+            st.session_state["feature_cols"]    = trainer.feature_names
+            st.session_state["threshold"]       = trainer.threshold
+            st.session_state["target_col"]      = trainer.target_col
             prog.progress(1.0); log_ph.empty()
             st.markdown(f"""<div class="info-panel-accent" style="margin-top:1.2rem">
                 <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:1.1rem;color:#34d399;margin-bottom:1rem">✓ Training Complete</div>
@@ -824,15 +832,28 @@ elif page == "04 -- Results":
     t5.metric("Features",m.get("n_features_used","?"))
     tp,tn,fp,fn = m.get("TP",0),m.get("TN",0),m.get("FP",0),m.get("FN",0)
     try:
-        fig,ax = plt.subplots(figsize=(3.5,3))
-        ax.imshow(np.array([[tn,fp],[fn,tp]]),cmap="Blues",aspect="auto")
-        ax.set_xticks([0,1]); ax.set_yticks([0,1])
-        ax.set_xticklabels(["Pred NEG","Pred POS"],fontsize=8,color="#6b6b8a")
-        ax.set_yticklabels(["Act NEG","Act POS"],fontsize=8,color="#6b6b8a")
-        for i,row in enumerate([[f"TN\n{tn:,}",f"FP\n{fp:,}"],[f"FN\n{fn:,}",f"TP\n{tp:,}"]]):
-            for j,lbl in enumerate(row): ax.text(j,i,lbl,ha="center",va="center",fontsize=9,color="#f1f1ff",fontfamily="monospace",fontweight="bold")
-        ax.set_title("Confusion Matrix",fontsize=9); apply_plot_style(fig,ax); fig.tight_layout(pad=.5)
-        col_cm,_ = st.columns([1,2])
+        # BUG 2 FIX: the Blues colormap made low-value cells (FP, FN, TP) render
+        # white-on-white because they were scaled relative to TN which dominates.
+        # Fix: use fixed background colors per quadrant, never a value-gradient.
+        fig, ax = plt.subplots(figsize=(3.5, 3))
+        # Fixed color grid: [[TN, FP], [FN, TP]]
+        cell_colors = [["#1e3a5f", "#92400e"],   # TN=dark blue, FP=dark amber
+                       ["#7f1d1d", "#14532d"]]    # FN=dark red,  TP=dark green
+        cell_labels = [[f"TN\n{tn:,}", f"FP\n{fp:,}"],
+                       [f"FN\n{fn:,}", f"TP\n{tp:,}"]]
+        ax.set_xlim(-0.5, 1.5); ax.set_ylim(-0.5, 1.5)
+        for i in range(2):
+            for j in range(2):
+                ax.add_patch(plt.Rectangle((j-0.5, i-0.5), 1, 1,
+                             facecolor=cell_colors[i][j], edgecolor="#0a0a0f", linewidth=2))
+                ax.text(j, i, cell_labels[i][j], ha="center", va="center",
+                        fontsize=9, color="#f1f1ff", fontfamily="monospace", fontweight="bold")
+        ax.set_xticks([0, 1]); ax.set_yticks([0, 1])
+        ax.set_xticklabels(["Pred NEG", "Pred POS"], fontsize=8, color="#6b6b8a")
+        ax.set_yticklabels(["Act NEG", "Act POS"],   fontsize=8, color="#6b6b8a")
+        ax.set_title("Confusion Matrix", fontsize=9)
+        apply_plot_style(fig, ax); fig.tight_layout(pad=.5)
+        col_cm, _ = st.columns([1, 2])
         with col_cm: st.pyplot(fig); plt.close()
     except: st.markdown(f"TP:`{tp}` TN:`{tn}` FP:`{fp}` FN:`{fn}`")
     sec("Training Info")
@@ -1083,11 +1104,31 @@ elif page == "06 -- Batch":
                         <div class="stat-card"><span class="stat-val">{pos_rate:.2f}%</span><span class="stat-lbl">Positive rate</span></div>
                     </div>""", unsafe_allow_html=True)
                     try:
-                        fig,ax = plt.subplots(figsize=(6,2.8))
-                        ax.hist(probs,bins=50,color="#6366f1",alpha=.85,edgecolor="none")
-                        ax.axvline(trainer.threshold,color="#f87171",linewidth=1.5,linestyle="--",label=f"threshold {trainer.threshold:.3f}")
-                        ax.set_xlabel("Probability",fontsize=8); ax.set_title("Score Distribution",fontsize=9); ax.legend(fontsize=7)
-                        apply_plot_style(fig,ax); fig.tight_layout(pad=.5); st.pyplot(fig); plt.close()
+                        # BUG 4 FIX: with imbalanced data (e.g. 0.17% fraud),
+                        # all probabilities cluster near 0 → 50 bins makes one
+                        # giant bar at 0.0–0.02. Fixes:
+                        #   1. 100 bins instead of 50 (more granularity)
+                        #   2. log Y-scale so the tiny positive tail is visible
+                        #   3. separate subplots: full range + zoomed 0–0.5 tail
+                        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(8, 2.8))
+                        for ax, rng, title in [
+                            (ax1, (0.0, 1.0), "Full range"),
+                            (ax2, (0.0, 0.5), "Tail (0–0.5)"),
+                        ]:
+                            mask = (probs >= rng[0]) & (probs <= rng[1])
+                            ax.hist(probs[mask], bins=100, color="#6366f1",
+                                    alpha=.85, edgecolor="none", log=True)
+                            ax.axvline(trainer.threshold, color="#f87171",
+                                       linewidth=1.5, linestyle="--",
+                                       label=f"threshold {trainer.threshold:.3f}")
+                            ax.set_xlabel("Probability", fontsize=8)
+                            ax.set_title(title, fontsize=8)
+                            ax.legend(fontsize=7)
+                        apply_plot_style(fig, [ax1, ax2])
+                        fig.suptitle("Score Distribution (log Y)", fontsize=9,
+                                     color="#8888aa")
+                        fig.tight_layout(pad=.5)
+                        st.pyplot(fig); plt.close()
                     except: pass
                     st.dataframe(results.head(200), use_container_width=True)
                     st.download_button("Download Predictions CSV",results.to_csv(index=False).encode(),"automlx_predictions.csv","text/csv",use_container_width=True)
