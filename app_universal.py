@@ -371,6 +371,322 @@ hr{border-color:#13132a!important;margin:1rem 0!important}
     line-height: 1.4;
 }
 .tooltip-wrap:hover .tooltip-body { visibility: visible; }
+
+/* ── HOME PAGE ───────────────────────────────────────────────────────────── */
+.hero-wrap {
+    position: relative;
+    padding: 3.5rem 0 2.5rem;
+    overflow: hidden;
+}
+.hero-wrap::before {
+    content: '';
+    position: absolute;
+    top: -80px; left: -100px;
+    width: 500px; height: 500px;
+    background: radial-gradient(circle, rgba(99,102,241,.07) 0%, transparent 70%);
+    pointer-events: none;
+}
+.hero-eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .62rem;
+    color: #6366f1;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-bottom: .9rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.hero-eyebrow::before {
+    content: '';
+    display: inline-block;
+    width: 18px; height: 1px;
+    background: #6366f1;
+}
+.hero-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: 3rem;
+    color: #f1f1ff;
+    letter-spacing: -1.5px;
+    line-height: 1.08;
+    margin: 0 0 1rem;
+}
+.hero-title span { color: #6366f1; }
+.hero-sub {
+    font-family: 'Inter', sans-serif;
+    font-size: 1rem;
+    color: #6b6b8a;
+    font-weight: 300;
+    line-height: 1.6;
+    max-width: 560px;
+    margin-bottom: 2rem;
+}
+.hero-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 2.5rem;
+}
+.hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .65rem;
+    font-weight: 500;
+    border: 1px solid;
+}
+.flow-wrap {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    margin: 2rem 0;
+}
+.flow-step {
+    flex: 1;
+    background: #0e0e1a;
+    border: 1px solid #1a1a2e;
+    border-radius: 10px;
+    padding: 1.4rem 1.2rem;
+    position: relative;
+    transition: border-color .2s;
+}
+.flow-step:hover { border-color: rgba(99,102,241,.35); }
+.flow-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 2rem;
+    font-weight: 600;
+    color: rgba(99,102,241,.15);
+    line-height: 1;
+    margin-bottom: .5rem;
+}
+.flow-icon {
+    font-size: 1.4rem;
+    margin-bottom: .6rem;
+    display: block;
+}
+.flow-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: .9rem;
+    font-weight: 600;
+    color: #c4c4e0;
+    margin-bottom: .3rem;
+}
+.flow-desc {
+    font-family: 'Inter', sans-serif;
+    font-size: .75rem;
+    color: #4a4a6a;
+    font-weight: 300;
+    line-height: 1.5;
+}
+.flow-arrow {
+    display: flex;
+    align-items: center;
+    padding: 0 .6rem;
+    color: #2a2a4a;
+    font-size: 1.1rem;
+    flex-shrink: 0;
+}
+.kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin: 2rem 0;
+}
+.kpi-card {
+    background: #0e0e1a;
+    border: 1px solid #1a1a2e;
+    border-radius: 10px;
+    padding: 1.2rem 1.3rem;
+    text-align: center;
+    transition: border-color .2s;
+}
+.kpi-card:hover { border-color: rgba(99,102,241,.3); }
+.kpi-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 1.7rem;
+    font-weight: 600;
+    line-height: 1.1;
+    display: block;
+    margin-bottom: .3rem;
+}
+.kpi-lbl {
+    font-family: 'Inter', sans-serif;
+    font-size: .72rem;
+    color: #4a4a6a;
+    font-weight: 300;
+}
+.domain-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin: 1rem 0;
+}
+.domain-card {
+    background: #0b0b16;
+    border: 1px solid #13132a;
+    border-radius: 8px;
+    padding: 1rem 1.1rem;
+    transition: border-color .2s, background .2s;
+}
+.domain-card:hover { background: #0e0e1c; border-color: rgba(99,102,241,.25); }
+.domain-icon { font-size: 1.3rem; margin-bottom: .4rem; display: block; }
+.domain-name {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: .82rem;
+    font-weight: 600;
+    color: #c4c4e0;
+    margin-bottom: .2rem;
+}
+.domain-desc {
+    font-family: 'Inter', sans-serif;
+    font-size: .7rem;
+    color: #4a4a6a;
+    font-weight: 300;
+    line-height: 1.45;
+}
+.authors-bar {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    padding: 1rem 1.4rem;
+    background: #0b0b16;
+    border: 1px solid #13132a;
+    border-radius: 8px;
+    margin-top: 2rem;
+    flex-wrap: wrap;
+}
+.authors-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .58rem;
+    color: #3a3a5c;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    flex-shrink: 0;
+}
+.author-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .7rem;
+    color: #a5b4fc;
+}
+.author-chip::before {
+    content: '';
+    display: inline-block;
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: #6366f1;
+}
+.links-row {
+    display: flex;
+    gap: 10px;
+    margin-left: auto;
+    flex-wrap: wrap;
+}
+.ext-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 5px;
+    border: 1px solid #1a1a2e;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .62rem;
+    color: #6b6b8a;
+    text-decoration: none;
+    transition: border-color .15s, color .15s;
+}
+.ext-link:hover { border-color: rgba(99,102,241,.4); color: #a5b4fc; }
+
+/* ── FRAUD ALERT BANNER ──────────────────────────────────────────────────── */
+@keyframes alert-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,.4); }
+    50%       { box-shadow: 0 0 0 10px rgba(239,68,68,0); }
+}
+.fraud-alert {
+    background: linear-gradient(135deg, #1a0505, #200808);
+    border: 1.5px solid #ef4444;
+    border-radius: 12px;
+    padding: 2rem 2.5rem;
+    text-align: center;
+    animation: alert-pulse 2s ease-in-out infinite;
+    margin-bottom: 1rem;
+}
+.fraud-alert-tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .62rem;
+    color: #fca5a5;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    margin-bottom: .6rem;
+}
+.fraud-alert-prob {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 3.8rem;
+    font-weight: 700;
+    color: #ef4444;
+    line-height: 1;
+    margin-bottom: .5rem;
+}
+.fraud-alert-meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .62rem;
+    color: #7f1d1d;
+    letter-spacing: 1.5px;
+}
+
+/* ── METRIC TOOLTIP EXPANDER ────────────────────────────────────────────── */
+.metric-explain-row {
+    display: flex;
+    gap: 1rem;
+    padding: .65rem 0;
+    border-bottom: 1px solid #0f0f1e;
+    align-items: flex-start;
+}
+.metric-explain-row:last-child { border-bottom: none; }
+.me-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .72rem;
+    font-weight: 600;
+    color: #a5b4fc;
+    flex: 0 0 100px;
+    padding-top: 1px;
+}
+.me-score {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .72rem;
+    color: #34d399;
+    flex: 0 0 70px;
+    padding-top: 1px;
+}
+.me-desc {
+    font-family: 'Inter', sans-serif;
+    font-size: .75rem;
+    color: #6b6b8a;
+    font-weight: 300;
+    line-height: 1.5;
+    flex: 1;
+}
+
+/* ── BATCH UPLOAD CLARIFICATION ─────────────────────────────────────────── */
+.batch-info {
+    background: rgba(96,165,250,.04);
+    border: 1px solid rgba(96,165,250,.18);
+    border-left: 3px solid #60a5fa;
+    border-radius: 8px;
+    padding: .85rem 1.2rem;
+    margin-bottom: 1rem;
+    font-family: 'Inter', sans-serif;
+    font-size: .8rem;
+    color: #6b6b8a;
+    line-height: 1.55;
+}
+.batch-info strong { color: #60a5fa; font-weight: 500; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -561,7 +877,7 @@ with st.sidebar:
     sidebar_model_status(active_trainer)
 
     st.markdown('<div class="nav-section">Navigation</div>', unsafe_allow_html=True)
-    page = st.radio("Navigation", ["01 -- Upload","02 -- Analyze","03 -- Train",
+    page = st.radio("Navigation", ["Home","01 -- Upload","02 -- Analyze","03 -- Train",
                                     "04 -- Results","05 -- Predict","06 -- Batch"],
                     label_visibility="collapsed")
 
@@ -578,8 +894,166 @@ with st.sidebar:
 
     st.markdown('<div class="sidebar-footer">AutoML-X · HuggingFace Space</div>', unsafe_allow_html=True)
 
+# ── HOME PAGE ────────────────────────────────────────────────────────────────
+if page == "Home":
+    # resolve active trainer once at top so all sections can use it
+    active = st.session_state.get("u_trainer") or load_saved_model()
+
+    # ── Hero ──────────────────────────────────────────────────────────────────
+    st.markdown("""
+    <div class="hero-wrap">
+        <div class="hero-eyebrow">AutoML-X &nbsp;·&nbsp; Universal Binary Classifier</div>
+        <div class="hero-title">Upload any CSV.<br>Get a trained <span>ML model</span><br>in minutes.</div>
+        <div class="hero-sub">No code. No configuration. AutoML-X reads your data, selects the right algorithm, trains, evaluates, and explains — all automatically. Built for fintech, healthcare, HR, and credit risk.</div>
+        <div class="hero-badges">
+            <span class="hero-badge" style="color:#34d399;border-color:rgba(52,211,153,.25);background:rgba(52,211,153,.05)">&#x2713; Auto model selection</span>
+            <span class="hero-badge" style="color:#6366f1;border-color:rgba(99,102,241,.25);background:rgba(99,102,241,.05)">&#x2713; 6 dataset tiers</span>
+            <span class="hero-badge" style="color:#60a5fa;border-color:rgba(96,165,250,.25);background:rgba(96,165,250,.05)">&#x2713; SHAP explainability</span>
+            <span class="hero-badge" style="color:#fbbf24;border-color:rgba(251,191,36,.25);background:rgba(251,191,36,.05)">&#x2713; Up to 2M rows</span>
+            <span class="hero-badge" style="color:#c084fc;border-color:rgba(192,132,252,.25);background:rgba(192,132,252,.05)">&#x2713; PDF report export</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── CTA buttons ───────────────────────────────────────────────────────────
+    cta1, cta2, cta3 = st.columns([1.2, 1.2, 3])
+    with cta1:
+        if st.button("Start with your CSV", type="primary", use_container_width=True):
+            st.session_state["_nav"] = "01 -- Upload"
+            st.rerun()
+    with cta2:
+        if st.button("Try sample dataset", use_container_width=True):
+            st.session_state["_load_sample"] = True
+            st.session_state["_nav"] = "01 -- Upload"
+            st.rerun()
+
+    # ── 3-step flow ───────────────────────────────────────────────────────────
+    sec("How it works")
+    st.markdown("""
+    <div class="flow-wrap">
+        <div class="flow-step">
+            <div class="flow-num">01</div>
+            <span class="flow-icon">&#x1F4C2;</span>
+            <div class="flow-title">Upload CSV</div>
+            <div class="flow-desc">Drop any binary classification dataset. AutoML-X auto-detects column types, handles missing values, and selects a processing tier based on size.</div>
+        </div>
+        <div class="flow-arrow">&#x2192;</div>
+        <div class="flow-step">
+            <div class="flow-num">02</div>
+            <span class="flow-icon">&#x26A1;</span>
+            <div class="flow-title">Auto-Train</div>
+            <div class="flow-desc">Multiple models run in parallel — Logistic Regression, LightGBM, XGBoost. Cross-validated, threshold-optimised. Best model selected automatically.</div>
+        </div>
+        <div class="flow-arrow">&#x2192;</div>
+        <div class="flow-step">
+            <div class="flow-num">03</div>
+            <span class="flow-icon">&#x1F4CA;</span>
+            <div class="flow-title">Explain &amp; Export</div>
+            <div class="flow-desc">SHAP values show which features drove each prediction. Download the trained model (.pkl) or a full PDF performance report.</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── KPI stats — live if model trained, pure platform facts otherwise ───────
+    sec("Platform capabilities")
+    if active:
+        m_home    = active.metrics
+        auc_color = "#34d399" if m_home.get('test_roc_auc', 0) >= 0.85 else "#fbbf24"
+        st.markdown(f"""
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <span class="kpi-val" style="color:{auc_color}">{m_home.get('test_roc_auc',0):.4f}</span>
+                <div class="kpi-lbl">ROC-AUC &nbsp;·&nbsp; {active.best_model_name}</div>
+            </div>
+            <div class="kpi-card">
+                <span class="kpi-val" style="color:#a5b4fc">{m_home.get('recall',0)*100:.1f}%</span>
+                <div class="kpi-lbl">Recall on current model</div>
+            </div>
+            <div class="kpi-card">
+                <span class="kpi-val" style="color:#fbbf24">{m_home.get('n_rows_total',0):,}</span>
+                <div class="kpi-lbl">Rows in training set</div>
+            </div>
+            <div class="kpi-card">
+                <span class="kpi-val" style="color:#60a5fa">6</span>
+                <div class="kpi-lbl">Dataset size tiers (Tiny to Massive)</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <span class="kpi-val" style="color:#6366f1;font-size:1.1rem;padding-top:.3rem">LR / LGB / XGB</span>
+                <div class="kpi-lbl">3 algorithms compared automatically</div>
+            </div>
+            <div class="kpi-card">
+                <span class="kpi-val" style="color:#34d399">5-fold CV</span>
+                <div class="kpi-lbl">Cross-validation on smaller datasets</div>
+            </div>
+            <div class="kpi-card">
+                <span class="kpi-val" style="color:#fbbf24">Up to 2M</span>
+                <div class="kpi-lbl">Max rows supported</div>
+            </div>
+            <div class="kpi-card">
+                <span class="kpi-val" style="color:#60a5fa">6</span>
+                <div class="kpi-lbl">Dataset size tiers (Tiny to Massive)</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ── Use cases ─────────────────────────────────────────────────────────────
+    sec("Use cases")
+    st.markdown("""
+    <div class="domain-grid">
+        <div class="domain-card">
+            <span class="domain-icon">&#x1F3E6;</span>
+            <div class="domain-name">Fraud Detection</div>
+            <div class="domain-desc">Classify transactions as fraud or legitimate. Handles extreme class imbalance with balanced weighting.</div>
+        </div>
+        <div class="domain-card">
+            <span class="domain-icon">&#x1F4B8;</span>
+            <div class="domain-name">Credit Risk</div>
+            <div class="domain-desc">Loan default prediction for NBFCs and microfinance. Works on both small (&lt;1K) and large (500K+) portfolios.</div>
+        </div>
+        <div class="domain-card">
+            <span class="domain-icon">&#x1F4C9;</span>
+            <div class="domain-name">Customer Churn</div>
+            <div class="domain-desc">Predict which customers will leave. Upload your CRM export and get a trained churn model in minutes.</div>
+        </div>
+        <div class="domain-card">
+            <span class="domain-icon">&#x1FA7A;</span>
+            <div class="domain-name">Disease Prediction</div>
+            <div class="domain-desc">Binary clinical outcomes — diabetic / not, positive / negative. No data science team required.</div>
+        </div>
+        <div class="domain-card">
+            <span class="domain-icon">&#x1F9D1;&#x200D;&#x1F4BC;</span>
+            <div class="domain-name">HR Analytics</div>
+            <div class="domain-desc">Employee attrition and hiring outcome classification. Upload any HR CSV, pick target column, done.</div>
+        </div>
+        <div class="domain-card">
+            <span class="domain-icon">&#x1F393;</span>
+            <div class="domain-name">Research Baseline</div>
+            <div class="domain-desc">Get a reproducible ML baseline fast. Model leaderboard with CV scores for direct comparison.</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Authors bar ───────────────────────────────────────────────────────────
+    st.markdown("""
+    <div class="authors-bar">
+        <span class="authors-label">Built by</span>
+        <span class="author-chip">Sujal Baghela</span>
+        <span class="author-chip">Sameer Bhilware</span>
+        <span class="authors-label" style="margin-left:.5rem">MITS, Gwalior &nbsp;·&nbsp; March 2026</span>
+        <div class="links-row">
+            <a class="ext-link" href="https://github.com/Sujal-baghela/Automl-fraud-detection" target="_blank">&#x2B21; GitHub</a>
+            <a class="ext-link" href="https://dark-ui-automl-fraud-detection.hf.space" target="_blank">&#x1F916; HuggingFace</a>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
 # ── PAGE 01 — Upload ──────────────────────────────────────────────────────────
-if page == "01 -- Upload":
+elif page == "01 -- Upload":
     ph("STEP 01 / 06","Upload Dataset","Drop any CSV -- up to 2GB, any number of rows. Auto-cleaned before training.")
     uploaded = st.file_uploader("Drop your CSV here or click to browse", type=["csv"])
     if uploaded:
@@ -830,6 +1304,40 @@ elif page == "04 -- Results":
     t1.metric("Threshold",f"{m.get('threshold',.5):.5f}"); t2.metric("Precision",f"{m.get('precision',0):.5f}")
     t3.metric("Recall",f"{m.get('recall',0):.5f}"); t4.metric("F1",f"{m.get('f1_score',0):.5f}")
     t5.metric("Features",m.get("n_features_used","?"))
+    # Metric explanations for non-ML users
+    with st.expander("What do these metrics mean?"):
+        auc_v  = m.get('test_roc_auc', 0)
+        f1_v   = m.get('f1_score', 0)
+        rec_v  = m.get('recall', 0)
+        pre_v  = m.get('precision', 0)
+        thr_v  = m.get('threshold', 0.5)
+        st.markdown(f"""
+        <div class="metric-explain-row">
+            <div class="me-name">ROC-AUC</div>
+            <div class="me-score">{auc_v:.4f}</div>
+            <div class="me-desc">Area Under the ROC Curve. Measures how well the model ranks positives above negatives across all thresholds. <strong style="color:#34d399">0.97 = excellent</strong>, 0.5 = random guessing, 1.0 = perfect. Best single metric for imbalanced data.</div>
+        </div>
+        <div class="metric-explain-row">
+            <div class="me-name">F1 Score</div>
+            <div class="me-score">{f1_v:.4f}</div>
+            <div class="me-desc">Harmonic mean of Precision and Recall. Balances false positives and false negatives equally. Use this when both missing positives and flagging negatives are costly.</div>
+        </div>
+        <div class="metric-explain-row">
+            <div class="me-name">Recall</div>
+            <div class="me-score">{rec_v:.4f}</div>
+            <div class="me-desc">Out of all actual positives, what % did the model catch? <strong style="color:#fbbf24">Critical for fraud and medical diagnosis</strong> — a missed fraud is more costly than a false alarm. Higher recall = fewer missed cases.</div>
+        </div>
+        <div class="metric-explain-row">
+            <div class="me-name">Precision</div>
+            <div class="me-score">{pre_v:.4f}</div>
+            <div class="me-desc">Out of all cases flagged as positive, what % were actually positive? High precision = fewer false alarms. Trade-off: higher precision usually means lower recall.</div>
+        </div>
+        <div class="metric-explain-row">
+            <div class="me-name">Threshold</div>
+            <div class="me-score">{thr_v:.4f}</div>
+            <div class="me-desc">The probability cutoff — above this value a case is classified as positive. AutoML-X optimises this automatically by maximising F1 on the validation set. Lower threshold = catch more positives but more false alarms.</div>
+        </div>
+        """, unsafe_allow_html=True)
     tp,tn,fp,fn = m.get("TP",0),m.get("TN",0),m.get("FP",0),m.get("FN",0)
     try:
         # BUG 2 FIX: the Blues colormap made low-value cells (FP, FN, TP) render
@@ -1002,7 +1510,13 @@ elif page == "05 -- Predict":
             prob = float(trainer.predict_proba(input_df)[0])
             pred = int(prob >= trainer.threshold); t = trainer.threshold
             if pred==1:
-                st.markdown(f'<div class="result-pos"><div class="result-label" style="color:#f87171">Positive</div><div class="result-prob" style="color:#f87171">{prob*100:.2f}%</div><div class="result-meta">PROBABILITY · THRESHOLD {t:.5f}</div></div>', unsafe_allow_html=True)
+                # POSITIVE verdict — pulsing alert banner for urgency
+                st.markdown(f"""
+                <div class="fraud-alert">
+                    <div class="fraud-alert-tag">&#x26A0; Positive — Risk Detected</div>
+                    <div class="fraud-alert-prob">{prob*100:.2f}%</div>
+                    <div class="fraud-alert-meta">PROBABILITY &nbsp;·&nbsp; THRESHOLD {t:.5f} &nbsp;·&nbsp; MODEL {trainer.best_model_name.upper()}</div>
+                </div>""", unsafe_allow_html=True)
             else:
                 st.markdown(f'<div class="result-neg"><div class="result-label" style="color:#34d399">Negative</div><div class="result-prob" style="color:#34d399">{prob*100:.2f}%</div><div class="result-meta">PROBABILITY · THRESHOLD {t:.5f}</div></div>', unsafe_allow_html=True)
             try:
@@ -1080,7 +1594,16 @@ elif page == "06 -- Batch":
     </div>""", unsafe_allow_html=True)
     with st.expander("Required feature columns"):
         st.markdown(" ".join(f'<span class="badge b-num">{f}</span>' for f in trainer.feature_names), unsafe_allow_html=True)
-    uploaded = st.file_uploader("Upload CSV for batch inference", type=["csv"])
+    # Batch upload clarification
+    st.markdown("""
+    <div class="batch-info">
+        <strong>Upload new, unlabeled data</strong> — not your training CSV.<br>
+        This file should have the same feature columns but <strong>no target column</strong>.
+        The model will score each row and assign a probability and risk level.
+        This is the same workflow as AWS SageMaker batch transform or Google Vertex AI batch prediction.
+    </div>
+    """, unsafe_allow_html=True)
+    uploaded = st.file_uploader("Upload CSV for batch scoring", type=["csv"])
     if uploaded:
         file_mb = uploaded.size/1e6; is_large = file_mb > 50
         if is_large:
@@ -1094,13 +1617,28 @@ elif page == "06 -- Batch":
             with st.spinner(f"Scoring {len(X_raw):,} rows..."):
                 try:
                     probs = trainer.predict_proba(X_raw); preds = (probs>=trainer.threshold).astype(int)
-                    results = df_new.copy(); results["probability"]=(probs*100).round(4)
-                    results["predicted_class"]=preds; results["label"]=["POSITIVE" if p==1 else "NEGATIVE" for p in preds]
+                    # Build prediction-focused results — not raw features
+                    results_pred = pd.DataFrame({
+                        "probability": (probs * 100).round(2),
+                        "prediction":  ["POSITIVE" if p==1 else "NEGATIVE" for p in preds],
+                        "risk_level":  pd.cut(
+                            probs,
+                            bins=[0, 0.2, 0.5, 0.8, 1.0],
+                            labels=["Low", "Medium", "High", "Critical"],
+                            include_lowest=True,
+                        ).astype(str),
+                    })
+                    # Full download still includes original columns
+                    results_full = df_new.copy()
+                    results_full["probability"]     = (probs * 100).round(4)
+                    results_full["predicted_class"] = preds
+                    results_full["prediction"]      = results_pred["prediction"]
+                    results_full["risk_level"]       = results_pred["risk_level"]
                     pos_rate = preds.mean()*100
                     sec("Batch Results")
                     st.markdown(f"""<div class="stat-row stat-row-3" style="margin-bottom:1.2rem">
-                        <div class="stat-card"><span class="stat-val">{len(results):,}</span><span class="stat-lbl">Total rows</span></div>
-                        <div class="stat-card"><span class="stat-val stat-val-red">{int(preds.sum()):,}</span><span class="stat-lbl">Positive</span></div>
+                        <div class="stat-card"><span class="stat-val">{len(results_pred):,}</span><span class="stat-lbl">Total rows scored</span></div>
+                        <div class="stat-card"><span class="stat-val stat-val-red">{int(preds.sum()):,}</span><span class="stat-lbl">Positives found</span></div>
                         <div class="stat-card"><span class="stat-val">{pos_rate:.2f}%</span><span class="stat-lbl">Positive rate</span></div>
                     </div>""", unsafe_allow_html=True)
                     try:
@@ -1125,11 +1663,19 @@ elif page == "06 -- Batch":
                             ax.set_title(title, fontsize=8)
                             ax.legend(fontsize=7)
                         apply_plot_style(fig, [ax1, ax2])
-                        fig.suptitle("Score Distribution (log Y)", fontsize=9,
-                                     color="#8888aa")
+                        fig.suptitle("Score Distribution (log Y)", fontsize=9, color="#8888aa")
                         fig.tight_layout(pad=.5)
                         st.pyplot(fig); plt.close()
-                    except: pass
-                    st.dataframe(results.head(200), use_container_width=True)
-                    st.download_button("Download Predictions CSV",results.to_csv(index=False).encode(),"automlx_predictions.csv","text/csv",use_container_width=True)
+                    except: st.caption("Score distribution chart unavailable.")
+                    # Show prediction-focused preview (not raw V1..V28)
+                    sec("Predictions Preview")
+                    st.dataframe(results_pred.head(200), use_container_width=True)
+                    with st.expander("View with original features"):
+                        st.dataframe(results_full.head(100), use_container_width=True)
+                    st.download_button(
+                        "Download Predictions CSV",
+                        results_full.to_csv(index=False).encode(),
+                        "automlx_predictions.csv", "text/csv",
+                        use_container_width=True,
+                    )
                 except Exception as e: st.error(f"Batch prediction failed: {e}")
