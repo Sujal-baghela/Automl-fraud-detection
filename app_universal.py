@@ -488,7 +488,8 @@ elif page == "01 -- Upload":
     uploaded = st.file_uploader("Drop your CSV here or click to browse", type=["csv"])
     if uploaded:
         file_mb = uploaded.size / 1e6; is_large = file_mb > 50
-        st.markdown(f'<div class="info-panel"><b style="color:#d4d4e8">{uploaded.name}</b> &nbsp;·&nbsp; <span style="{JM};font-size:.68rem;color:#4a4a6a">{file_mb:.1f} MB &nbsp;·&nbsp; {"<span style=\'color:#fbbf24\'>chunked loader</span>" if is_large else "<span style=\'color:#34d399\'>full load</span>"}</span></div>', unsafe_allow_html=True)
+        _load_tag = "<span style='color:#fbbf24'>chunked loader</span>" if is_large else "<span style='color:#34d399'>full load</span>"
+        st.markdown(f'<div class="info-panel"><b style="color:#d4d4e8">{uploaded.name}</b> &nbsp;·&nbsp; <span style="{JM};font-size:.68rem;color:#4a4a6a">{file_mb:.1f} MB &nbsp;·&nbsp; {_load_tag}</span></div>', unsafe_allow_html=True)
         c1, c2 = st.columns(2)
         with c1: max_rows = st.slider("Row limit",100_000,2_000_000,2_000_000,100_000,format="{:,}") if is_large else None
         with c2: encoding = st.selectbox("Encoding",["utf-8","latin-1","iso-8859-1","utf-16"],index=0)
