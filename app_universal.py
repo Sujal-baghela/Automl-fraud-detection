@@ -1,8 +1,15 @@
 """
-app_universal.py  ·  AutoML-X v7.0
+app_universal.py  ·  AutoML-X v7.1
 ════════════════════════════════════
 AutoML-X Universal Trainer — PUBLIC HuggingFace Space
 Runs on port 7860. Design: Obsidian Terminal — Linear/Vercel aesthetic.
+
+v7.1 upgrades:
+  - SHAP explainability on Page 04 (Results) and Page 05 (Predict)
+  - PDF report export with metrics + SHAP + privacy page
+  - Data privacy notice in sidebar
+  - Pulse/scan animation on training button
+  - Tooltips on feature inputs (Page 05)
 """
 
 import sys, os
@@ -26,6 +33,19 @@ from src.universal_trainer import (
     TIER_TINY, TIER_SMALL, TIER_MEDIUM,
     TIER_LARGE, TIER_XLARGE, TIER_MASSIVE,
 )
+
+# ── v7.1 additions ────────────────────────────────────────────────────────────
+try:
+    from src.shap_universal import UniversalSHAP
+    _SHAP_AVAILABLE = True
+except ImportError:
+    _SHAP_AVAILABLE = False
+
+try:
+    from src.report_generator import generate_pdf_report
+    _PDF_AVAILABLE = True
+except ImportError:
+    _PDF_AVAILABLE = False
 
 st.set_page_config(page_title="AutoML-X", page_icon="⬡",
                    layout="wide", initial_sidebar_state="expanded")
@@ -255,6 +275,102 @@ hr{border-color:#13132a!important;margin:1rem 0!important}
 .next-step{background:rgba(99,102,241,.05);border:1px solid rgba(99,102,241,.15);border-radius:8px;padding:.85rem 1.2rem;font-family:'Inter',sans-serif;font-size:.83rem;color:#8888cc;margin-top:1rem}
 .next-step strong{color:#a5b4fc}
 .sidebar-footer{position:fixed;bottom:1.2rem;font-family:'JetBrains Mono',monospace;font-size:.58rem;color:#2a2a4a;letter-spacing:1px}
+
+/* ── PULSE / SCAN ANIMATION (training button state) ──────────────────────── */
+@keyframes pulse-border {
+    0%   { box-shadow: 0 0 0 0 rgba(99,102,241,.5); }
+    70%  { box-shadow: 0 0 0 8px rgba(99,102,241,0); }
+    100% { box-shadow: 0 0 0 0 rgba(99,102,241,0); }
+}
+@keyframes scan-line {
+    0%   { background-position: 0% 0%; }
+    100% { background-position: 0% 100%; }
+}
+.training-pulse .stButton>button[kind="primary"] {
+    animation: pulse-border 1.2s ease-out infinite !important;
+}
+
+/* ── PRIVACY NOTICE ──────────────────────────────────────────────────────── */
+.privacy-notice {
+    background: rgba(52,211,153,.03);
+    border: 1px solid rgba(52,211,153,.12);
+    border-radius: 8px;
+    padding: .7rem .9rem;
+    margin: .8rem 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .6rem;
+    color: #3a5a4a;
+    line-height: 1.6;
+}
+.privacy-notice .pn-title {
+    color: #34d399;
+    font-size: .62rem;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    margin-bottom: .35rem;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+/* ── SHAP PANEL ──────────────────────────────────────────────────────────── */
+.shap-panel {
+    background: #0b0b18;
+    border: 1px solid rgba(99,102,241,.2);
+    border-radius: 10px;
+    padding: 1.2rem 1.5rem;
+    margin: .8rem 0;
+}
+.shap-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: .9rem;
+    font-weight: 600;
+    color: #a5b4fc;
+    margin-bottom: .3rem;
+}
+.shap-subtitle {
+    font-family: 'Inter', sans-serif;
+    font-size: .75rem;
+    color: #4a4a6a;
+    font-weight: 300;
+    margin-bottom: 1rem;
+}
+.shap-feat-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: .35rem 0;
+    border-bottom: 1px solid rgba(255,255,255,.03);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .68rem;
+}
+.shap-feat-row:last-child { border-bottom: none; }
+.shap-feat-name { color: #8888aa; flex: 0 0 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shap-feat-bar-wrap { flex: 1; height: 6px; background: #13132a; border-radius: 3px; position: relative; }
+.shap-feat-bar { height: 6px; border-radius: 3px; }
+.shap-feat-val { flex: 0 0 60px; text-align: right; }
+
+/* ── TOOLTIP ─────────────────────────────────────────────────────────────── */
+.tooltip-wrap { position: relative; display: inline-block; }
+.tooltip-wrap .tooltip-body {
+    visibility: hidden;
+    background: #1a1a2e;
+    border: 1px solid rgba(99,102,241,.3);
+    color: #a5b4fc;
+    font-family: 'Inter', sans-serif;
+    font-size: .72rem;
+    border-radius: 6px;
+    padding: .45rem .7rem;
+    position: absolute;
+    z-index: 999;
+    bottom: 130%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 180px;
+    white-space: normal;
+    line-height: 1.4;
+}
+.tooltip-wrap:hover .tooltip-body { visibility: visible; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -452,6 +568,14 @@ with st.sidebar:
     st.markdown('<div class="nav-section" style="margin-top:1.8rem">Tier System</div>', unsafe_allow_html=True)
     render_tier_legend()
 
+    # ── Privacy notice ────────────────────────────────────────────────────────
+    st.markdown("""
+    <div class="privacy-notice">
+        <div class="pn-title">&#x1F512; DATA PRIVACY</div>
+        All processing happens in-memory. No data is stored, logged, or transmitted. Your CSV is cleared when the session ends.
+    </div>
+    """, unsafe_allow_html=True)
+
     st.markdown('<div class="sidebar-footer">AutoML-X · HuggingFace Space</div>', unsafe_allow_html=True)
 
 # ── PAGE 01 — Upload ──────────────────────────────────────────────────────────
@@ -482,6 +606,7 @@ if page == "01 -- Upload":
                 p2.progress(0.9)
                 st.session_state["df"] = df
                 st.session_state.pop("profile",None); st.session_state.pop("u_trainer",None)
+                st.session_state["dataset_name"] = uploaded.name
                 p2.progress(1.0); ph2.empty(); p2.empty()
                 tier = get_tier(len(df)); color,name,_ = TIER_META[tier]
                 st.markdown(f"""<div class="info-panel-accent" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem">
@@ -721,10 +846,103 @@ elif page == "04 -- Results":
     if cr and cr.get("changes"):
         with st.expander(f"Data Cleaning Report -- {len(cr['changes'])} action(s)"):
             for ch in cr["changes"]: st.markdown(f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:.72rem;color:#6b6b8a;padding:2px 0">✓ {ch}</div>', unsafe_allow_html=True)
+
+    # ── SHAP Global Feature Importance ────────────────────────────────────────
+    sec("Feature Importance (SHAP)")
+    if not _SHAP_AVAILABLE:
+        st.markdown('<div class="info-panel-warn"><span style="font-family:\'JetBrains Mono\',monospace;font-size:.72rem;color:#fbbf24">△ shap_universal.py not found in src/ — copy it from the upgrade package</span></div>', unsafe_allow_html=True)
+    else:
+        df_ref = st.session_state.get("df")
+        if df_ref is None:
+            st.markdown('<div class="info-panel"><span style="font-family:\'JetBrains Mono\',monospace;font-size:.72rem;color:#4a4a6a">Dataset not in session — re-upload to generate SHAP explanations</span></div>', unsafe_allow_html=True)
+        else:
+            if st.button("Generate SHAP Explanations", use_container_width=True):
+                with st.spinner("Computing SHAP values (this may take 15-30s for large datasets)..."):
+                    try:
+                        X_shap = df_ref.drop(columns=[trainer.target_col], errors="ignore")
+                        X_shap = X_shap.reindex(columns=trainer.feature_names, fill_value=0)
+                        shap_engine = UniversalSHAP(trainer.best_pipeline)
+                        result = shap_engine.explain_single(X_shap, index=0, top_k=12)
+                        st.session_state["shap_result"] = result
+                        # also compute global
+                        global_imp = shap_engine.global_importance(X_shap, n_sample=300)
+                        st.session_state["shap_global"] = global_imp
+                    except Exception as e:
+                        st.error(f"SHAP failed: {e}")
+
+            shap_result = st.session_state.get("shap_result")
+            if shap_result:
+                model_cls = shap_result.get("model_class","--")
+                st.markdown(f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:.65rem;color:#3a3a5c;margin-bottom:.8rem">Explainer: auto-selected for {model_cls}</div>', unsafe_allow_html=True)
+                sc1, sc2 = st.columns([1, 1])
+                with sc1:
+                    st.markdown('<div class="shap-panel"><div class="shap-title">Top Features by Impact</div><div class="shap-subtitle">Sorted by absolute SHAP value — how much each feature moves the prediction</div>', unsafe_allow_html=True)
+                    top = shap_result.get("top_features", [])[:10]
+                    if top:
+                        max_abs = max(abs(t["shap"]) for t in top) or 1
+                        rows_html = ""
+                        for t in top:
+                            fname = t["feature"].replace("num__","").replace("cat__","")
+                            val   = t["shap"]
+                            pct   = abs(val) / max_abs * 100
+                            color = "#f87171" if val > 0 else "#34d399"
+                            rows_html += f"""
+                            <div class="shap-feat-row">
+                                <div class="shap-feat-name" title="{fname}">{fname}</div>
+                                <div class="shap-feat-bar-wrap">
+                                    <div class="shap-feat-bar" style="width:{pct:.1f}%;background:{color}"></div>
+                                </div>
+                                <div class="shap-feat-val" style="color:{color}">{val:+.4f}</div>
+                            </div>"""
+                        st.markdown(rows_html + "</div>", unsafe_allow_html=True)
+                with sc2:
+                    try:
+                        shap_engine_plot = UniversalSHAP(trainer.best_pipeline)
+                        fig = shap_engine_plot.plot_bar(shap_result, title="SHAP — Feature Impact")
+                        st.pyplot(fig); plt.close()
+                    except Exception as e:
+                        st.caption(f"Chart unavailable: {e}")
+                st.markdown(f"""<div class="info-panel" style="margin-top:.8rem">
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:.65rem;color:#4a4a6a">
+                    <span style="color:#f87171">Red bars</span> = feature increases prediction probability &nbsp;·&nbsp;
+                    <span style="color:#34d399">Green bars</span> = feature decreases prediction probability &nbsp;·&nbsp;
+                    Base value: <span style="color:#a5b4fc">{shap_result.get('base_value', 0):.4f}</span>
+                    </span></div>""", unsafe_allow_html=True)
+
+    # ── Export ────────────────────────────────────────────────────────────────
     sec("Export")
-    if os.path.exists("models/universal_model.pkl"):
-        with open("models/universal_model.pkl","rb") as f:
-            st.download_button("Download Model (.pkl)",f,"universal_model.pkl","application/octet-stream",use_container_width=True)
+    exp_c1, exp_c2 = st.columns(2)
+    with exp_c1:
+        if os.path.exists("models/universal_model.pkl"):
+            with open("models/universal_model.pkl","rb") as f:
+                st.download_button("Download Model (.pkl)", f, "universal_model.pkl",
+                                   "application/octet-stream", use_container_width=True)
+    with exp_c2:
+        if _PDF_AVAILABLE:
+            shap_for_pdf = st.session_state.get("shap_result")
+            dataset_name = st.session_state.get("dataset_name", "dataset.csv")
+            if st.button("Generate PDF Report", use_container_width=True):
+                with st.spinner("Generating PDF..."):
+                    try:
+                        pdf_bytes = generate_pdf_report(
+                            metrics=m,
+                            dataset_name=dataset_name,
+                            shap_result=shap_for_pdf,
+                        )
+                        st.session_state["pdf_bytes"] = pdf_bytes
+                    except Exception as e:
+                        st.error(f"PDF generation failed: {e}")
+            pdf_bytes = st.session_state.get("pdf_bytes")
+            if pdf_bytes:
+                st.download_button(
+                    "Download PDF Report",
+                    pdf_bytes,
+                    f"automlx_report_{dataset_name.replace('.csv','')}.pdf",
+                    "application/pdf",
+                    use_container_width=True,
+                )
+        else:
+            st.markdown('<div class="info-panel"><span style="font-family:\'JetBrains Mono\',monospace;font-size:.72rem;color:#4a4a6a">PDF: copy report_generator.py to src/</span></div>', unsafe_allow_html=True)
 
 # ── PAGE 05 — Predict ─────────────────────────────────────────────────────────
 elif page == "05 -- Predict":
@@ -738,6 +956,13 @@ elif page == "05 -- Predict":
         <div><span style="font-family:'JetBrains Mono',monospace;font-size:.6rem;color:#3a3a5c;text-transform:uppercase;letter-spacing:1.5px">Threshold</span><div style="font-family:'JetBrains Mono',monospace;font-size:.85rem;color:#a5b4fc;margin-top:3px">{trainer.threshold:.5f}</div></div>
     </div>""", unsafe_allow_html=True)
     sec("Feature Inputs")
+    st.markdown(f"""<div class="info-panel" style="margin-bottom:.8rem;padding:.7rem 1rem">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:.62rem;color:#3a3a5c">
+        TIPS &nbsp;·&nbsp; <span style="color:#5a5a80">Defaults are median values from your training data.</span>
+        &nbsp;·&nbsp; <span style="color:#5a5a80">Numeric features accept decimals.</span>
+        &nbsp;·&nbsp; <span style="color:#5a5a80">Categorical features show training-set values.</span>
+        &nbsp;·&nbsp; After prediction, SHAP will show which inputs drove the result.
+        </span></div>""", unsafe_allow_html=True)
     input_vals = {}; cols = st.columns(4)
     for i,feat in enumerate(features):
         with cols[i%4]:
@@ -752,7 +977,8 @@ elif page == "05 -- Predict":
     st.markdown("")
     if st.button("Run Prediction", type="primary", use_container_width=True):
         try:
-            prob = float(trainer.predict_proba(pd.DataFrame([input_vals]))[0])
+            input_df = pd.DataFrame([input_vals])
+            prob = float(trainer.predict_proba(input_df)[0])
             pred = int(prob >= trainer.threshold); t = trainer.threshold
             if pred==1:
                 st.markdown(f'<div class="result-pos"><div class="result-label" style="color:#f87171">Positive</div><div class="result-prob" style="color:#f87171">{prob*100:.2f}%</div><div class="result-meta">PROBABILITY · THRESHOLD {t:.5f}</div></div>', unsafe_allow_html=True)
@@ -769,6 +995,56 @@ elif page == "05 -- Predict":
                 ax.text(t,-.42,f"threshold {t:.3f}",ha="center",fontsize=7,color="#6366f1",fontfamily="monospace")
                 apply_plot_style(fig,ax); fig.tight_layout(pad=0); st.pyplot(fig); plt.close()
             except: pass
+
+            # ── SHAP explanation for this prediction ─────────────────────────
+            if _SHAP_AVAILABLE:
+                sec("Why this prediction? (SHAP)")
+                with st.spinner("Computing SHAP explanation..."):
+                    try:
+                        shap_engine = UniversalSHAP(trainer.best_pipeline)
+                        # build explainer with a reference sample if available
+                        df_ref = st.session_state.get("df")
+                        if df_ref is not None:
+                            X_ref = df_ref.drop(columns=[trainer.target_col], errors="ignore")
+                            X_ref = X_ref.reindex(columns=trainer.feature_names, fill_value=0)
+                            sample_ref = X_ref.sample(min(100, len(X_ref)), random_state=42)
+                        else:
+                            sample_ref = input_df.reindex(columns=trainer.feature_names, fill_value=0)
+                        shap_engine._build_explainer(sample_ref)
+                        explain_df = input_df.reindex(columns=trainer.feature_names, fill_value=0)
+                        result = shap_engine.explain_single(explain_df, index=0, top_k=10)
+
+                        # text explanation
+                        top = result.get("top_features", [])
+                        pos_feats = [t for t in top if t["shap"] > 0][:3]
+                        neg_feats = [t for t in top if t["shap"] < 0][:3]
+
+                        explain_html = '<div class="shap-panel">'
+                        explain_html += '<div class="shap-title">Prediction Explanation</div>'
+                        explain_html += f'<div class="shap-subtitle">Model: {result.get("model_class","--")} · Base value: {result.get("base_value",0):.4f}</div>'
+
+                        if pos_feats:
+                            explain_html += '<div style="font-family:\'JetBrains Mono\',monospace;font-size:.62rem;color:#f87171;letter-spacing:1px;margin:.6rem 0 .3rem">INCREASES PREDICTION</div>'
+                            for f in pos_feats:
+                                fname = f["feature"].replace("num__","").replace("cat__","")
+                                explain_html += f'<div class="shap-feat-row"><div class="shap-feat-name">{fname}</div><div class="shap-feat-val" style="color:#f87171">{f["shap"]:+.4f}</div></div>'
+
+                        if neg_feats:
+                            explain_html += '<div style="font-family:\'JetBrains Mono\',monospace;font-size:.62rem;color:#34d399;letter-spacing:1px;margin:.6rem 0 .3rem">DECREASES PREDICTION</div>'
+                            for f in neg_feats:
+                                fname = f["feature"].replace("num__","").replace("cat__","")
+                                explain_html += f'<div class="shap-feat-row"><div class="shap-feat-name">{fname}</div><div class="shap-feat-val" style="color:#34d399">{f["shap"]:+.4f}</div></div>'
+
+                        explain_html += '</div>'
+                        col_ex1, col_ex2 = st.columns([1, 1])
+                        with col_ex1:
+                            st.markdown(explain_html, unsafe_allow_html=True)
+                        with col_ex2:
+                            fig2 = shap_engine.plot_bar(result, title="Feature Impact")
+                            st.pyplot(fig2); plt.close()
+                    except Exception as e:
+                        st.caption(f"SHAP unavailable for this prediction: {e}")
+
         except Exception as e: st.error(f"Prediction failed: {e}")
 
 # ── PAGE 06 — Batch ───────────────────────────────────────────────────────────
