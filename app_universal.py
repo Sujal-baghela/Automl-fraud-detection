@@ -818,7 +818,9 @@ elif page == "02 -- Analyze":
                 fig, ax = plt.subplots(figsize=(5, 2.8))
                 labels  = [str(k) for k in profile["class_counts"].keys()]
                 values  = list(profile["class_counts"].values())
-                colors  = ["#6366f1", "#f87171"] if len(values) >= 2 else ["#6366f1"]
+                colors  = ["#3efe04", "#fb02e6"] if len(values) >= 2 else ["#3b3efe"]
+                 # FIX #2: log scale makes minority class visible alongside majority
+                ax.set_yscale('log')
                 bars    = ax.bar(labels, values, color=colors[:len(values)],
                                  width=0.45, edgecolor="none")
                 for bar, val in zip(bars, values):
@@ -1000,11 +1002,13 @@ elif page == "03 -- Train":
 
             dropped = metrics.get("dropped_cols", [])
             if dropped:
+                # FIX #10: visible warning-style panel for dropped columns
                 st.markdown(
-                    f'<div style="{JM};font-size:.7rem;color:#3a3a5c;margin-top:.5rem">'
-                    f"Dropped {len(dropped)} col(s): "
-                    + ", ".join(f"`{c}`" for c in dropped[:8])
-                    + ("…" if len(dropped) > 8 else "") + "</div>",
+                    f'<div class="info-panel-warn" style="margin-top:.6rem;padding:.7rem 1rem">'
+                    f'<span style="{JM};font-size:.72rem;color:#fbbf24">△ Dropped {len(dropped)} col(s): '
+                    + " ".join(f'<span style="color:#a5b4fc;background:rgba(99,102,241,.08);padding:1px 5px;border-radius:3px">{c}</span>' for c in dropped[:8])
+                    + (f' <span style="color:#6b6b8a">+ {len(dropped)-8} more</span>' if len(dropped) > 8 else "")
+                    + "</span></div>",
                     unsafe_allow_html=True,
                 )
 
@@ -1034,6 +1038,251 @@ elif page == "04 -- Results":
         _no_model_msg()
         st.stop()
 
+    drift_detector = st.session_state.get("drift_detector")
+    drift_ready    = _DRIFT and drift_detector is not None
+
+    st.markdown(
+        f'<div class="info-panel" style="display:flex;gap:2rem;flex-wrap:wrap">'
+        f'<div><span style="{JM};font-size:.6rem;color:#3a3a5c;text-transform:uppercase;letter-spacing:1.5px">Model</span>'
+        f'<div style="{JM};font-size:.85rem;color:#a5b4fc;margin-top:3px">{trainer.best_model_name}</div></div>'
+        f'<div><span style="{JM};font-size:.6rem;color:#3a3a5c;text-transform:uppercase;letter-spacing:1.5px">Required features</span>'
+        f'<div style="{JM};font-size:.85rem;color:#a5b4fc;margin-top:3px">{len(trainer.feature_names)}</div></div>'
+        f'<div><span style="{JM};font-size:.6rem;color:#3a3a5c;text-transform:uppercase;letter-spacing:1.5px">Drift detector</span>'
+        f'<div style="{JM};font-size:.85rem;color:{"#34d399" if drift_ready else "#4a4a6a"};margin-top:3px">'
+        f'{"Ready" if drift_ready else "Not initialized"}</div></div>'
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+    with st.expander("Required feature columns"):
+        st.markdown(
+            " ".join(f'<span class="badge b-num">{f}</span>' for f in trainer.feature_names),
+            unsafe_allow_html=True,
+        )
+
+    st.markdown(
+        '<div class="batch-info">'
+        "<strong>Upload new, unlabeled data</strong> — not your training CSV.<br>"
+        "This file should have the same feature columns but <strong>no target column</strong>. "
+        "The model will score each row with a probability, risk level, and drift check."
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    uploaded = st.file_uploader("Upload CSV for batch scoring", type=["csv"])
+    if uploaded:
+        file_mb  = uploaded.size / 1e6
+        is_large = file_mb > 50
+        if is_large:
+            st.markdown(
+                f'<div class="info-panel-warn">'
+                f'<span style="{JM};font-size:.72rem;color:#fbbf24">'
+                f"△ Large file ({file_mb:.0f} MB) — chunked loader active</span></div>",
+                unsafe_allow_html=True,
+            )
+            with st.spinner("Loading…"):
+                df_new = load_csv_chunked(uploaded, max_rows=None, chunk_size=100_000)
+        else:
+            df_new = pd.read_csv(uploaded)
+
+        render_tier(get_tier(len(df_new)), len(df_new))
+        st.markdown(
+            f'<div style="{JM};font-size:.72rem;color:#34d399;margin-bottom:.8rem">'
+            f"✓ Loaded {len(df_new):,} rows</div>",
+            unsafe_allow_html=True,
+        )
+
+        X_raw = df_new.drop(columns=[trainer.target_col], errors="ignore")
+
+        if st.button("Run Batch Prediction", type="primary", use_container_width=True):
+            with st.spinner(f"Scoring {len(X_raw):,} rows…"):
+                try:
+                    probs = trainer.predict_proba(X_raw)
+                    preds = (probs >= trainer.threshold).astype(int)
+
+                    # BUG-L FIX: format near-zero probabilities properly
+                    results_pred = pd.DataFrame({
+                        "probability": [f"{p*100:.4f}" for p in probs],
+                        "prediction":  ["POSITIVE" if p == 1 else "NEGATIVE" for p in preds],
+                        "risk_level":  pd.cut(
+                            probs,
+                            bins=[0, 0.2, 0.5, 0.8, 1.0],
+                            labels=["Low", "Medium", "High", "Critical"],
+                            include_lowest=True,
+                        ).astype(str),
+                    })
+                    results_full = df_new.copy()
+                    results_full["probability"]     = (probs * 100).round(4)
+                    results_full["predicted_class"] = preds
+                    results_full["prediction"]      = results_pred["prediction"]
+                    results_full["risk_level"]      = results_pred["risk_level"]
+
+                    pos_rate  = preds.mean() * 100
+                    _prob_std = float(probs.std())
+
+                    # BUG-D / FIX #8: near-zero score warning
+                    if _prob_std < 0.01:
+                        st.markdown(
+                            f'<div class="info-panel-warn" style="margin-bottom:.8rem">'
+                            f'<span style="{JM};font-size:.76rem;color:#fbbf24;font-weight:600">'
+                            f'⚠ All predicted probabilities are near zero (std = {_prob_std:.5f})<br>'
+                            f'<span style="color:#6b6b8a;font-weight:400">This usually means the batch data is from a '
+                            f'<strong style="color:#a5b4fc">different domain</strong> than the training data. '
+                            f'Check the drift report below to confirm. '
+                            f'Retrain on data from this domain for valid predictions.</span></span></div>',
+                            unsafe_allow_html=True,
+                        )
+
+                    sec("Batch Results")
+                    st.markdown(
+                        f'<div class="stat-row stat-row-3" style="margin-bottom:1.2rem">'
+                        f'<div class="stat-card"><span class="stat-val">{len(results_pred):,}</span>'
+                        f'<span class="stat-lbl">Total rows scored</span></div>'
+                        f'<div class="stat-card"><span class="stat-val stat-val-red">{int(preds.sum()):,}</span>'
+                        f'<span class="stat-lbl">Positives found</span></div>'
+                        f'<div class="stat-card"><span class="stat-val">{pos_rate:.2f}%</span>'
+                        f'<span class="stat-lbl">Positive rate</span></div></div>',
+                        unsafe_allow_html=True,
+                    )
+
+                    if _EVAL:
+                        fig_dist = plot_score_distribution(
+                            probs, trainer.threshold,
+                            title=f"Score Distribution — {trainer.best_model_name}",
+                        )
+                        if fig_dist:
+                            st.pyplot(fig_dist)
+                            plt.close()
+                    else:
+                        try:
+                            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(8, 2.8))
+                            for ax, rng, ttl in [
+                                (ax1, (0.0, 1.0), "Full range"),
+                                (ax2, (0.0, 0.5), "Tail zoom"),
+                            ]:
+                                mask = (probs >= rng[0]) & (probs <= rng[1])
+                                ax.hist(probs[mask], bins=100, color="#6366f1",
+                                        alpha=0.85, edgecolor="none", log=True)
+                                ax.axvline(trainer.threshold, color="#f87171",
+                                           linewidth=1.5, linestyle="--",
+                                           label=f"threshold {trainer.threshold:.3f}")
+                                ax.set_xlabel("Probability", fontsize=8)
+                                ax.set_title(ttl, fontsize=8)
+                                ax.legend(fontsize=7)
+                            apply_plot_style(fig, [ax1, ax2])
+                            fig.suptitle("Score Distribution (log Y)", fontsize=9, color="#8888aa")
+                            fig.tight_layout(pad=0.5)
+                            st.pyplot(fig)
+                            plt.close()
+                        except Exception:
+                            pass
+
+                    if drift_ready:
+                        sec("Data Drift Report")
+                        try:
+                            drift_features = st.session_state.get("drift_features", [])
+                            X_batch_num    = X_raw.reindex(
+                                columns=trainer.feature_names, fill_value=0
+                            )[drift_features]
+                            drift_report   = drift_detector.detect(X_batch_num)
+
+                            dratio  = drift_report["drift_ratio"]
+                            dcount  = drift_report["drifted_count"]
+                            dtotal  = drift_report["total_features"]
+                            dstatus = drift_report["status"]
+
+                            if dratio >= 0.3:
+                                ds_color, ds_bg = "#f87171", "rgba(248,113,113,.08)"
+                            elif dratio >= 0.1:
+                                ds_color, ds_bg = "#fbbf24", "rgba(251,191,36,.08)"
+                            else:
+                                ds_color, ds_bg = "#34d399", "rgba(52,211,153,.08)"
+
+                            st.markdown(
+                                f'<div style="background:{ds_bg};border:1px solid {ds_color}30;'
+                                f'border-left:3px solid {ds_color};border-radius:8px;padding:.9rem 1.2rem;margin-bottom:1rem">'
+                                f'<div style="{JM};font-size:.75rem;color:{ds_color};font-weight:600">{dstatus}</div>'
+                                f'<div style="{JM};font-size:.68rem;color:#4a4a6a;margin-top:.3rem">'
+                                f"{dcount} / {dtotal} features drifted &nbsp;·&nbsp; ratio {dratio:.1%}</div></div>",
+                                unsafe_allow_html=True,
+                            )
+
+                            details    = drift_report.get("details", {})
+                            drift_rows = sorted(
+                                details.items(), key=lambda x: x[1]["psi"], reverse=True
+                            )[:10]
+
+                            if drift_rows:
+                                # FIX #3: PSI scale legend
+                                st.markdown(
+                                    f'<div style="background:#0e0e1a;border:1px solid #1a1a2e;border-radius:8px;'
+                                    f'padding:.6rem 1rem;margin:.5rem 0;{JM};font-size:.63rem">'
+                                    f'<span style="color:#3a3a5c;letter-spacing:1.5px;text-transform:uppercase">PSI SCALE &nbsp;·&nbsp; </span>'
+                                    f'<span style="color:#34d399">&lt; 0.1 stable</span>'
+                                    f'<span style="color:#3a3a5c"> &nbsp;·&nbsp; </span>'
+                                    f'<span style="color:#fbbf24">0.1 – 0.2 warning</span>'
+                                    f'<span style="color:#3a3a5c"> &nbsp;·&nbsp; </span>'
+                                    f'<span style="color:#f87171">&gt; 0.2 high drift</span>'
+                                    f'<span style="color:#3a3a5c"> &nbsp;(PSI = 26 means completely different distribution)</span>'
+                                    f'</div>',
+                                    unsafe_allow_html=True,
+                                )
+                                html = (
+                                    f'<div style="background:#0b0b18;border:1px solid rgba(251,191,36,.2);'
+                                    f'border-radius:10px;padding:1.2rem 1.5rem;margin:.8rem 0">'
+                                    f'<div style="{JM};font-size:.65rem;color:#fbbf24;font-weight:600;margin-bottom:.6rem">'
+                                    f"TOP FEATURES BY PSI (Population Stability Index)</div>"
+                                )
+                                # BUG-B FIX: correct indentation — for loop and st.markdown at same level
+                                for feat, d in drift_rows:
+                                    psi_color = (
+                                        "#f87171" if d["psi"] >= 0.2 else
+                                        "#fbbf24" if d["psi"] >= 0.1 else "#34d399"
+                                    )
+                                    html += (
+                                        f'<div class="drift-row">'
+                                        f'<div style="flex:0 0 180px;color:#8888aa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{feat}">{feat}</div>'
+                                        f'<div style="flex:0 0 80px;color:{psi_color}">PSI {d["psi"]:.4f}</div>'
+                                        f'<div style="flex:0 0 80px;color:#4a4a6a">p={d["pvalue"]:.3f}</div>'
+                                        f'<div style="flex:1;color:{psi_color}">{d["status"]}</div>'
+                                        f"</div>"
+                                    )
+                                st.markdown(html + "</div>", unsafe_allow_html=True)
+
+                            if dratio >= 0.1:
+                                st.markdown(
+                                    f'<div class="info-panel-warn" style="margin-top:.5rem">'
+                                    f'<span style="{JM};font-size:.72rem;color:#fbbf24">'
+                                    f"△ Drift detected in {dcount} features. "
+                                    f"This batch may be from a different time period or data source. "
+                                    f"Consider retraining the model on newer data.</span></div>",
+                                    unsafe_allow_html=True,
+                                )
+                        except Exception as e:
+                            st.caption(f"Drift detection error: {e}")
+                    elif _DRIFT and not drift_ready:
+                        st.markdown(
+                            f'<div class="info-panel" style="margin-top:.5rem">'
+                            f'<span style="{JM};font-size:.7rem;color:#3a3a5c">'
+                            "△ Drift detector not initialized — train a model first to enable drift comparison."
+                            "</span></div>",
+                            unsafe_allow_html=True,
+                        )
+
+                    sec("Predictions Preview")
+                    st.dataframe(results_pred.head(200), use_container_width=True)
+                    with st.expander("View with original features"):
+                        st.dataframe(results_full.head(100), use_container_width=True)
+
+                    st.download_button(
+                        "Download Predictions CSV",
+                        results_full.to_csv(index=False).encode(),
+                        "automlx_predictions.csv", "text/csv",
+                        use_container_width=True,
+                    )
+
+                except Exception as e:
+                    st.error(f"Batch prediction failed: {e}")
     m = trainer.metrics
     render_tier(m.get("tier", 0), m.get("n_rows_total"))
 
@@ -1168,7 +1417,7 @@ elif page == "04 -- Results":
             # Fallback — fixed-color cells, no Blues cmap white-on-white bug
             try:
                 fig, ax = plt.subplots(figsize=(3.5, 3))
-                cell_colors = [["#1e3a5f","#92400e"],["#7f1d1d","#14532d"]]
+                cell_colors = [["#01e040","#00c3ff"],["#d718b1bf","#3E895C"]]
                 cell_labels = [[f"TN\n{tn:,}",f"FP\n{fp:,}"],[f"FN\n{fn:,}",f"TP\n{tp:,}"]]
                 ax.set_xlim(-0.5,1.5); ax.set_ylim(-0.5,1.5)
                 for i in range(2):
@@ -1181,8 +1430,10 @@ elif page == "04 -- Results":
                                 ha="center", va="center", fontsize=9,
                                 color="#f1f1ff", fontfamily="monospace", fontweight="bold")
                 ax.set_xticks([0,1]); ax.set_yticks([0,1])
-                ax.set_xticklabels(["Pred NEG","Pred POS"], fontsize=8, color="#6b6b8a")
-                ax.set_yticklabels(["Act NEG","Act POS"],  fontsize=8, color="#6b6b8a")
+                   # FIX #11: domain-specific labels
+                ax.set_xticklabels(["Pred Legit","Pred Fraud"], fontsize=8, color="#6a6aef")
+                ax.set_yticklabels(["Actual Legit","Actual Fraud"], fontsize=8, color="#6b6b8a")
+
                 ax.set_title("Confusion Matrix", fontsize=9)
                 apply_plot_style(fig, ax)
                 fig.tight_layout(pad=0.5)
@@ -1278,13 +1529,15 @@ elif page == "04 -- Results":
             cost_fn = st.number_input(
                 "Cost of False Negative (missed positive)",
                 min_value=1, value=10000,
-                help="₹ / $ cost of missing one fraud / disease / churn case",
+                # FIX #9: real-world fintech framing
+                help="e.g. ₹50,000 = average loss per undetected fraud transaction. Higher value → model is tuned to catch more positives at the cost of more false alerts.",
             )
             cost_fp = st.number_input(
                 "Cost of False Positive (false alarm)",
                 min_value=1, value=200,
-                help="₹ / $ cost of investigating one false alarm",
+                help="e.g. ₹200 = analyst time cost per false alert investigated. Lower than FN cost → threshold will be reduced to catch more fraud.",
             )
+            
         with co2:
             ratio       = cost_fn / cost_fp
             ratio_color = "#f87171" if ratio > 20 else "#fbbf24" if ratio > 5 else "#34d399"
@@ -1470,8 +1723,8 @@ elif page == "04 -- Results":
                 st.markdown(
                     f'<div class="info-panel" style="margin-top:.8rem">'
                     f'<span style="{JM};font-size:.65rem;color:#4a4a6a">'
-                    f'<span style="color:#f87171">Red</span> = increases prediction · '
-                    f'<span style="color:#34d399">Green</span> = decreases prediction · '
+                    f'<span style="color:#f87171">Red</span> = increases fraud probability · '
+                    f'<span style="color:#34d399">Green</span> = decreases fraud probability · '
                     f'Base: <span style="color:#a5b4fc">{shap_result.get("base_value",0):.4f}</span>'
                     f"</span></div>",
                     unsafe_allow_html=True,
@@ -1746,7 +1999,7 @@ elif page == "06 -- Batch":
                     preds = (probs >= trainer.threshold).astype(int)
 
                     results_pred = pd.DataFrame({
-                        "probability": (probs * 100).round(2),
+                        "probability": [f"{p*100:.4f}" for p in probs],
                         "prediction":  ["POSITIVE" if p == 1 else "NEGATIVE" for p in preds],
                         "risk_level":  pd.cut(
                             probs,
@@ -1762,6 +2015,18 @@ elif page == "06 -- Batch":
                     results_full["risk_level"]      = results_pred["risk_level"]
 
                     pos_rate = preds.mean() * 100
+                    # FIX #8: detect and warn when all scores are near-zero
+                    _prob_std = float(probs.std())
+                    if _prob_std < 0.01:
+                        st.markdown(
+                            f'<div class="info-panel-warn" style="margin-bottom:.8rem">'
+                            f'<span style="{JM};font-size:.76rem;color:#fbbf24;font-weight:600">'
+                            f'⚠ All predicted probabilities are near zero (std = {_prob_std:.5f})<br>'
+                            f'<span style="color:#6b6b8a;font-weight:400">This usually means the batch data is from a <strong style="color:#a5b4fc">different domain</strong> than the training data — '
+                            f'e.g. scoring churn data against a fraud model. The drift report below will confirm. '
+                            f'Retrain on data from this domain for valid predictions.</span></span></div>',
+                            unsafe_allow_html=True,
+                        )
                     sec("Batch Results")
                     st.markdown(
                         f'<div class="stat-row stat-row-3" style="margin-bottom:1.2rem">'
@@ -1846,26 +2111,40 @@ elif page == "06 -- Batch":
                                 details.items(), key=lambda x: x[1]["psi"], reverse=True
                             )[:10]
                             if drift_rows:
-                                html = (
-                                    f'<div style="background:#0b0b18;border:1px solid rgba(251,191,36,.2);'
-                                    f'border-radius:10px;padding:1.2rem 1.5rem;margin:.8rem 0">'
-                                    f'<div style="{JM};font-size:.65rem;color:#fbbf24;font-weight:600;margin-bottom:.6rem">'
-                                    f"TOP FEATURES BY PSI (Population Stability Index)</div>"
+                               # FIX #3: PSI scale legend so users understand severity
+                               st.markdown(
+                                  f'<div style="background:#0e0e1a;border:1px solid #1a1a2e;border-radius:8px;'
+                                  f'padding:.6rem 1rem;margin:.5rem 0;{JM};font-size:.63rem">'
+                                  f'<span style="color:#3a3a5c;letter-spacing:1.5px;text-transform:uppercase">PSI SCALE &nbsp;·&nbsp; </span>'
+                                  f'<span style="color:#34d399">&lt; 0.1 stable</span>'
+                                  f'<span style="color:#3a3a5c"> &nbsp;·&nbsp; </span>'
+                                  f'<span style="color:#fbbf24">0.1 – 0.2 warning</span>'
+                                  f'<span style="color:#3a3a5c"> &nbsp;·&nbsp; </span>'
+                                  f'<span style="color:#f87171">&gt; 0.2 high drift</span>'
+                                  f'<span style="color:#3a3a5c"> &nbsp;(PSI = 26 means completely different distribution)</span>'
+                                  f'</div>',
+                                  unsafe_allow_html=True,
                                 )
-                                for feat, d in drift_rows:
-                                    psi_color = (
-                                        "#f87171" if d["psi"] >= 0.2 else
-                                        "#fbbf24" if d["psi"] >= 0.1 else "#34d399"
-                                    )
-                                    html += (
-                                        f'<div class="drift-row">'
-                                        f'<div style="flex:0 0 180px;color:#8888aa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{feat}">{feat}</div>'
-                                        f'<div style="flex:0 0 80px;color:{psi_color}">PSI {d["psi"]:.4f}</div>'
-                                        f'<div style="flex:0 0 80px;color:#4a4a6a">p={d["pvalue"]:.3f}</div>'
-                                        f'<div style="flex:1;color:{psi_color}">{d["status"]}</div>'
-                                        f"</div>"
-                                    )
-                                st.markdown(html + "</div>", unsafe_allow_html=True)
+                               html = (
+                                  f'<div style="background:#0b0b18;border:1px solid rgba(251,191,36,.2);'
+                                  f'border-radius:10px;padding:1.2rem 1.5rem;margin:.8rem 0">'
+                                  f'<div style="{JM};font-size:.65rem;color:#fbbf24;font-weight:600;margin-bottom:.6rem">'
+                                  f"TOP FEATURES BY PSI (Population Stability Index)</div>"
+                                )
+                            for feat, d in drift_rows:
+                                psi_color = (
+                                    "#f87171" if d["psi"] >= 0.2 else
+                                    "#fbbf24" if d["psi"] >= 0.1 else "#34d399"
+                                )
+                                html += (
+                                    f'<div class="drift-row">'
+                                    f'<div style="flex:0 0 180px;color:#8888aa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{feat}">{feat}</div>'
+                                    f'<div style="flex:0 0 80px;color:{psi_color}">PSI {d["psi"]:.4f}</div>'
+                                    f'<div style="flex:0 0 80px;color:#4a4a6a">p={d["pvalue"]:.3f}</div>'
+                                    f'<div style="flex:1;color:{psi_color}">{d["status"]}</div>'
+                                    f"</div>"
+                                )
+                            st.markdown(html + "</div>", unsafe_allow_html=True)
 
                             if dratio >= 0.1:
                                 st.markdown(
@@ -1891,7 +2170,6 @@ elif page == "06 -- Batch":
                     st.dataframe(results_pred.head(200), use_container_width=True)
                     with st.expander("View with original features"):
                         st.dataframe(results_full.head(100), use_container_width=True)
-
                     st.download_button(
                         "Download Predictions CSV",
                         results_full.to_csv(index=False).encode(),
