@@ -103,6 +103,8 @@ if "u_trainer" not in st.session_state:
     st.session_state["u_trainer"] = None
 if "target_col" not in st.session_state:
     st.session_state["target_col"] = None
+if "positive_label" not in st.session_state:
+    st.session_state["positive_label"] = None
 
 # ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown("""<style>
@@ -699,7 +701,10 @@ elif page == "01 -- Upload":
                 st.error(f"Load failed: {e}")
 
     if "df" in st.session_state:
-        df  = st.session_state["df"]
+        df  = st.session_state.get("df")
+        if df is None:
+            st.warning("⚠️ Upload a dataset first.")
+            st.stop()
         sec("Preview")
         st.dataframe(df.head(6), use_container_width=True)
         ram = check_ram_safety(df)
@@ -741,7 +746,10 @@ elif page == "02 -- Analyze":
         st.warning("⚠️ Upload a dataset first.")
         st.stop()
 
-    df         = st.session_state["df"]
+    df         = st.session_state.get("df")
+    if df is None:
+        st.warning("⚠️ Upload a dataset first.")
+        st.stop()
     target_col = st.session_state.get("target_col", df.columns[-1])
     render_tier(get_tier(len(df)), len(df))
 
@@ -892,7 +900,10 @@ elif page == "03 -- Train":
         st.warning("⚠️ Upload a dataset first.")
         st.stop()
 
-    df         = st.session_state["df"]
+    df         = st.session_state.get("df")
+    if df is None:
+        st.warning("⚠️ Upload a dataset first.")
+        st.stop()
     target_col = st.session_state.get("target_col")
     pos_label  = st.session_state.get("positive_label")
 
