@@ -1,3 +1,15 @@
+<div align="center">
+
+# AutoML-X
+### Zero-code binary classification platform
+
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-automl--x.me-4f46e5?style=for-the-badge&logo=google-chrome&logoColor=white)](https://automl-x.me)
+[![HuggingFace](https://img.shields.io/badge/HuggingFace-Space-FFD21E?style=for-the-badge&logo=huggingface&logoColor=black)](https://dark-ui-automl-fraud-detection.hf.space)
+[![Tests](https://img.shields.io/badge/Tests-285%20Passing-22c55e?style=for-the-badge&logo=pytest&logoColor=white)](https://github.com/Sujal-baghela/Automl-fraud-detection/actions)
+[![Coverage](https://img.shields.io/badge/Coverage-99%25-22c55e?style=for-the-badge)](https://github.com/Sujal-baghela/Automl-fraud-detection)
+[![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
+
+</div>
 ---
 title: AutoML-X Fraud Detection
 emoji: 🛡️
