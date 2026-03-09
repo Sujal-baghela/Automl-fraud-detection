@@ -905,7 +905,10 @@ def get_models_for_tier(tier: int, is_imbalanced: bool, complexity: str) -> dict
                 max_iter=1000, class_weight="balanced" if bal else None, n_jobs=-1),
             "LightGBM": LGBMClassifier(
                 n_estimators=200, is_unbalance=bal, random_state=42,
-                n_jobs=-1, verbose=-1, num_leaves=63),
+                n_jobs=-1, verbose=-1, num_leaves=63,
+                # FIX #5: regularization prevents overfitting-caused AUC drop
+                # on large (200K-500K) imbalanced datasets like creditcard.csv
+                min_child_samples=20, subsample=0.8, colsample_bytree=0.8),
             "XGBoost": XGBClassifier(
                 n_estimators=100, random_state=42, n_jobs=-1,
                 eval_metric="auc", verbosity=0, tree_method="hist"),
@@ -1181,6 +1184,11 @@ class UniversalTrainer:
             "n_val":           len(Xvs),
             "n_rows_total":    self.profile["n_rows"],
             "cleaning_report": self.cleaning_report,
+            # FIX #1 (CRITICAL): val_probs + val_labels enable cost optimizer,
+            # threshold strategy comparison, and ROC/PR curves on Page 04.
+            # y_proba and yvs are already computed 10 lines above — zero overhead.
+            "val_probs":       y_proba.tolist(),
+            "val_labels":      yvs.tolist(),
         }
 
         self.save()

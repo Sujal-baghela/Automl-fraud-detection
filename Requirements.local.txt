@@ -1,0 +1,26 @@
+# ══════════════════════════════════════════════════════════════
+# requirements.local.txt  —  LOCAL DEVELOPMENT ONLY
+#
+# Extends requirements.txt with packages needed locally but
+# NOT on HuggingFace:
+#   - app/api.py     (fastapi, uvicorn)
+#   - Scripts/       (mlflow)
+#
+# Note: shap is in requirements.txt (used by both apps)
+#
+# Usage in Dockerfile.local:
+#   pip install -r requirements.txt -r requirements.local.txt
+# ══════════════════════════════════════════════════════════════
+
+# ── Local API server (app/api.py) ─────────────────────────────
+fastapi==0.129.0
+uvicorn==0.41.0
+pydantic==2.12.5
+starlette==0.52.1
+python-multipart
+httpx
+
+# ── MLflow experiment tracking (Scripts/) ─────────────────────
+mlflow
+cloudpickle
+imbalanced-learn
