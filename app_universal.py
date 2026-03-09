@@ -94,6 +94,16 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ── Session state initialization guards ──────────────────────────────────────
+if "_current_page" not in st.session_state:
+    st.session_state["_current_page"] = "Home"
+if "df" not in st.session_state:
+    st.session_state["df"] = None
+if "u_trainer" not in st.session_state:
+    st.session_state["u_trainer"] = None
+if "target_col" not in st.session_state:
+    st.session_state["target_col"] = None
+
 # ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown("""<style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600&family=Inter:wght@300;400;500&display=swap');
@@ -109,16 +119,16 @@ html,body,[class*="css"]{font-family:'Inter',sans-serif;background:#0a0a0f!impor
 .brand-logo{width:32px;height:32px;background:linear-gradient(135deg,#6366f1,#818cf8);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
 .brand-name{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:1.3rem;color:#f1f1ff;letter-spacing:-.5px}
 .brand-ver{font-family:'JetBrains Mono',monospace;font-size:.6rem;color:#6366f1;background:rgba(99,102,241,.1);border:1px solid rgba(99,102,241,.2);border-radius:4px;padding:1px 6px;margin-left:2px}
-.nav-section{font-family:'JetBrains Mono',monospace;font-size:.58rem;color:#3a3a5c;letter-spacing:2.5px;text-transform:uppercase;margin:1.5rem 0 .5rem}
+.nav-section{font-family:'JetBrains Mono',monospace;font-size:.58rem;color:#6a6a8c;letter-spacing:2.5px;text-transform:uppercase;margin:1.5rem 0 .5rem}
 [data-testid="stRadio"]>div{gap:2px!important}
-[data-testid="stRadio"] label{border-radius:7px!important;padding:.5rem .8rem!important;font-family:'Inter',sans-serif!important;font-size:.82rem!important;font-weight:400!important;color:#6b6b8a!important;cursor:pointer;transition:all .15s ease!important;border:1px solid transparent!important;margin:0!important}
+[data-testid="stRadio"] label{border-radius:7px!important;padding:.5rem .8rem!important;font-family:'Inter',sans-serif!important;font-size:.82rem!important;font-weight:400!important;color:#9b9bba!important;cursor:pointer;transition:all .15s ease!important;border:1px solid transparent!important;margin:0!important}
 [data-testid="stRadio"] label:hover{color:#c4c4e0!important;background:rgba(99,102,241,.06)!important}
 [data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked){color:#a5b4fc!important;background:rgba(99,102,241,.1)!important;border-color:rgba(99,102,241,.2)!important;font-weight:500!important}
 .page-header{border-bottom:1px solid #13132a;padding-bottom:1.2rem;margin-bottom:2rem}
 .page-eyebrow{font-family:'JetBrains Mono',monospace;font-size:.65rem;color:#6366f1;letter-spacing:2px;text-transform:uppercase;margin-bottom:.4rem}
 .page-title{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:2rem;color:#f1f1ff;letter-spacing:-.8px;line-height:1.1;margin:0}
-.page-desc{font-family:'Inter',sans-serif;font-size:.88rem;color:#6b6b8a;margin-top:.4rem;font-weight:300}
-.section-label{font-family:'JetBrains Mono',monospace;font-size:.65rem;color:#4a4a6a;letter-spacing:2px;text-transform:uppercase;margin:1.8rem 0 .8rem;display:flex;align-items:center;gap:8px}
+.page-desc{font-family:'Inter',sans-serif;font-size:.88rem;color:#9b9bba;margin-top:.4rem;font-weight:300}
+.section-label{font-family:'JetBrains Mono',monospace;font-size:.65rem;color:#7a7a9a;letter-spacing:2px;text-transform:uppercase;margin:1.8rem 0 .8rem;display:flex;align-items:center;gap:8px}
 .section-label::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,#13132a,transparent)}
 .stat-row{display:grid;gap:12px;margin-bottom:1.5rem}
 .stat-row-3{grid-template-columns:repeat(3,1fr)}.stat-row-4{grid-template-columns:repeat(4,1fr)}.stat-row-5{grid-template-columns:repeat(5,1fr)}
@@ -126,7 +136,7 @@ html,body,[class*="css"]{font-family:'Inter',sans-serif;background:#0a0a0f!impor
 .stat-card:hover{border-color:rgba(99,102,241,.3)}
 .stat-val{font-family:'JetBrains Mono',monospace;font-size:1.6rem;font-weight:500;color:#a5b4fc;line-height:1.1;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .stat-val-green{color:#34d399}.stat-val-amber{color:#fbbf24}.stat-val-red{color:#f87171}.stat-val-blue{color:#60a5fa}.stat-val-purple{color:#c084fc}
-.stat-lbl{font-family:'JetBrains Mono',monospace;font-size:.6rem;color:#3a3a5c;text-transform:uppercase;letter-spacing:2px;margin-top:.35rem;display:block}
+.stat-lbl{font-family:'JetBrains Mono',monospace;font-size:.6rem;color:#6a6a8c;text-transform:uppercase;letter-spacing:2px;margin-top:.35rem;display:block}
 .info-panel{background:#0e0e1a;border:1px solid #1a1a2e;border-radius:10px;padding:1.2rem 1.5rem;margin-bottom:1rem}
 .info-panel-accent{background:linear-gradient(135deg,#0e0e1a,#101020);border:1px solid rgba(99,102,241,.2);border-radius:10px;padding:1.2rem 1.5rem;margin-bottom:1rem;position:relative;overflow:hidden}
 .info-panel-accent::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,#6366f1,#818cf8,#34d399)}
@@ -147,19 +157,19 @@ html,body,[class*="css"]{font-family:'Inter',sans-serif;background:#0a0a0f!impor
 .b-text{background:rgba(192,132,252,.08);border:1px solid rgba(192,132,252,.25);color:#c084fc}
 .col-row{display:flex;align-items:center;gap:1rem;padding:.7rem 0;border-bottom:1px solid #0f0f1e}
 .col-name{font-family:'JetBrains Mono',monospace;font-size:.78rem;color:#c4c4e0;flex:0 0 180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.col-type-cell{flex:0 0 70px}.col-stats{font-family:'JetBrains Mono',monospace;font-size:.68rem;color:#4a4a6a;flex:1}
+.col-type-cell{flex:0 0 70px}.col-stats{font-family:'JetBrains Mono',monospace;font-size:.68rem;color:#7a7a9a;flex:1}
 .col-miss{font-family:'JetBrains Mono',monospace;font-size:.68rem;flex:0 0 80px;text-align:right}
 .cplx-panel{background:#0e0e1a;border-radius:10px;padding:1.2rem 1.5rem;border-left:3px solid;margin:.8rem 0}
-.cplx-linear{border-color:#60a5fa}.cplx-nonlinear{border-color:#fbbf24}.cplx-mixed{border-color:#34d399}.cplx-unknown{border-color:#4a4a6a}
+.cplx-linear{border-color:#60a5fa}.cplx-nonlinear{border-color:#fbbf24}.cplx-mixed{border-color:#34d399}.cplx-unknown{border-color:#7a7a9a}
 .cplx-title{font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:1rem;margin-bottom:.3rem}
-.cplx-note{font-family:'Inter',sans-serif;font-size:.78rem;color:#6b6b8a;margin-bottom:.6rem;font-weight:300}
+.cplx-note{font-family:'Inter',sans-serif;font-size:.78rem;color:#9b9bba;margin-bottom:.6rem;font-weight:300}
 .chip{display:inline-block;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.15);border-radius:4px;padding:2px 8px;font-family:'JetBrains Mono',monospace;font-size:.65rem;color:#7c7caa;margin:2px}
 .log-terminal{background:#06060c;border:1px solid #13132a;border-radius:8px;padding:1rem 1.2rem;font-family:'JetBrains Mono',monospace;font-size:.72rem;max-height:200px;overflow-y:auto;line-height:1.9}
 .log-terminal .log-done{color:#34d399}.log-terminal .log-active{color:#a5b4fc}
 .result-neg{background:rgba(52,211,153,.04);border:1px solid rgba(52,211,153,.3);border-radius:12px;padding:2.5rem;text-align:center}
 .result-label{font-family:'Space Grotesk',sans-serif;font-size:1rem;font-weight:600;letter-spacing:4px;text-transform:uppercase;margin-bottom:.5rem}
 .result-prob{font-family:'JetBrains Mono',monospace;font-size:3.5rem;font-weight:600;line-height:1;margin-bottom:.6rem}
-.result-meta{font-family:'JetBrains Mono',monospace;font-size:.65rem;color:#3a3a5c;letter-spacing:1.5px}
+.result-meta{font-family:'JetBrains Mono',monospace;font-size:.65rem;color:#6a6a8c;letter-spacing:1.5px}
 .model-card{background:linear-gradient(135deg,#0e0e1c,#11111f);border:1px solid rgba(99,102,241,.35);border-radius:10px;padding:.85rem 1rem;margin:.8rem 0;position:relative;overflow:hidden}
 .model-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,#6366f1,#818cf8,#34d399)}
 .model-card-header{font-family:'JetBrains Mono',monospace;font-size:.58rem;color:#6366f1;letter-spacing:2.5px;text-transform:uppercase;margin-bottom:.65rem;display:flex;align-items:center;gap:6px}
@@ -172,7 +182,7 @@ html,body,[class*="css"]{font-family:'Inter',sans-serif;background:#0a0a0f!impor
 .privacy-notice .pn-title{color:#34d399;font-size:.62rem;font-weight:600;letter-spacing:1.5px;margin-bottom:.35rem;display:flex;align-items:center;gap:5px}
 .shap-panel{background:#0b0b18;border:1px solid rgba(99,102,241,.2);border-radius:10px;padding:1.2rem 1.5rem;margin:.8rem 0}
 .shap-title{font-family:'Space Grotesk',sans-serif;font-size:.9rem;font-weight:600;color:#a5b4fc;margin-bottom:.3rem}
-.shap-subtitle{font-family:'Inter',sans-serif;font-size:.75rem;color:#4a4a6a;font-weight:300;margin-bottom:1rem}
+.shap-subtitle{font-family:'Inter',sans-serif;font-size:.75rem;color:#7a7a9a;font-weight:300;margin-bottom:1rem}
 .shap-feat-row{display:flex;align-items:center;gap:10px;padding:.35rem 0;border-bottom:1px solid rgba(255,255,255,.03);font-family:'JetBrains Mono',monospace;font-size:.68rem}
 .shap-feat-row:last-child{border-bottom:none}
 .shap-feat-name{color:#8888aa;flex:0 0 200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -186,10 +196,10 @@ html,body,[class*="css"]{font-family:'Inter',sans-serif;background:#0a0a0f!impor
 .stSelectbox>div>div,.stTextInput>div>div,.stNumberInput>div>div{background:#0e0e1a!important;border-color:#1a1a2e!important;color:#d4d4e8!important;border-radius:8px!important}
 [data-testid="stFileUploadDropzone"]{background:#0e0e1a!important;border:1px dashed #2a2a4a!important;border-radius:10px!important}
 [data-testid="stFileUploadDropzone"]:hover{border-color:rgba(99,102,241,.4)!important;background:rgba(99,102,241,.02)!important}
-label{color:#6b6b8a!important;font-family:'Inter',sans-serif!important;font-size:.78rem!important;font-weight:400!important;letter-spacing:0!important;text-transform:none!important}
+label{color:#9b9bba!important;font-family:'Inter',sans-serif!important;font-size:.78rem!important;font-weight:400!important;letter-spacing:0!important;text-transform:none!important}
 .stProgress>div>div{background:linear-gradient(90deg,#6366f1,#818cf8)!important;border-radius:2px!important}
 [data-testid="stMetric"]{background:#0e0e1a!important;border:1px solid #1a1a2e!important;border-radius:10px!important;padding:.9rem 1.2rem!important}
-[data-testid="stMetricLabel"]{font-family:'JetBrains Mono',monospace!important;font-size:.6rem!important;color:#3a3a5c!important;text-transform:uppercase!important;letter-spacing:2px!important}
+[data-testid="stMetricLabel"]{font-family:'JetBrains Mono',monospace!important;font-size:.6rem!important;color:#6a6a8c!important;text-transform:uppercase!important;letter-spacing:2px!important}
 [data-testid="stMetricValue"]{font-family:'JetBrains Mono',monospace!important;font-size:1.5rem!important;color:#a5b4fc!important}
 hr{border-color:#13132a!important;margin:1rem 0!important}
 div[data-testid="stDataFrame"]{border-radius:8px;overflow:hidden}
@@ -200,7 +210,7 @@ div[data-testid="stDataFrame"]{border-radius:8px;overflow:hidden}
 .metric-explain-row:last-child{border-bottom:none}
 .me-name{font-family:'JetBrains Mono',monospace;font-size:.72rem;font-weight:600;color:#a5b4fc;flex:0 0 100px;padding-top:1px}
 .me-score{font-family:'JetBrains Mono',monospace;font-size:.72rem;color:#34d399;flex:0 0 70px;padding-top:1px}
-.me-desc{font-family:'Inter',sans-serif;font-size:.75rem;color:#6b6b8a;font-weight:300;line-height:1.5;flex:1}
+.me-desc{font-family:'Inter',sans-serif;font-size:.75rem;color:#9b9bba;font-weight:300;line-height:1.5;flex:1}
 @keyframes alert-pulse{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.4)}50%{box-shadow:0 0 0 10px rgba(239,68,68,0)}}
 .fraud-alert{background:linear-gradient(135deg,#1a0505,#200808);border:1.5px solid #ef4444;border-radius:12px;padding:2rem 2.5rem;text-align:center;animation:alert-pulse 2s ease-in-out infinite;margin-bottom:1rem}
 .fraud-alert-tag{font-family:'JetBrains Mono',monospace;font-size:.62rem;color:#fca5a5;letter-spacing:4px;text-transform:uppercase;margin-bottom:.6rem}
@@ -212,7 +222,7 @@ div[data-testid="stDataFrame"]{border-radius:8px;overflow:hidden}
 .hero-eyebrow::before{content:'';display:inline-block;width:18px;height:1px;background:#6366f1}
 .hero-title{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:3rem;color:#f1f1ff;letter-spacing:-1.5px;line-height:1.08;margin:0 0 1rem}
 .hero-title span{color:#6366f1}
-.hero-sub{font-family:'Inter',sans-serif;font-size:1rem;color:#6b6b8a;font-weight:300;line-height:1.6;max-width:560px;margin-bottom:2rem}
+.hero-sub{font-family:'Inter',sans-serif;font-size:1rem;color:#9b9bba;font-weight:300;line-height:1.6;max-width:560px;margin-bottom:2rem}
 .hero-badges{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:2.5rem}
 .hero-badge{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;font-family:'JetBrains Mono',monospace;font-size:.65rem;font-weight:500;border:1px solid}
 .flow-wrap{display:flex;align-items:stretch;gap:0;margin:2rem 0}
@@ -221,27 +231,27 @@ div[data-testid="stDataFrame"]{border-radius:8px;overflow:hidden}
 .flow-num{font-family:'JetBrains Mono',monospace;font-size:2rem;font-weight:600;color:rgba(99,102,241,.15);line-height:1;margin-bottom:.5rem}
 .flow-icon{font-size:1.4rem;margin-bottom:.6rem;display:block}
 .flow-title{font-family:'Space Grotesk',sans-serif;font-size:.9rem;font-weight:600;color:#c4c4e0;margin-bottom:.3rem}
-.flow-desc{font-family:'Inter',sans-serif;font-size:.75rem;color:#4a4a6a;font-weight:300;line-height:1.5}
+.flow-desc{font-family:'Inter',sans-serif;font-size:.75rem;color:#7a7a9a;font-weight:300;line-height:1.5}
 .flow-arrow{display:flex;align-items:center;padding:0 .6rem;color:#2a2a4a;font-size:1.1rem;flex-shrink:0}
 .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:2rem 0}
 .kpi-card{background:#0e0e1a;border:1px solid #1a1a2e;border-radius:10px;padding:1.2rem 1.3rem;text-align:center;transition:border-color .2s}
 .kpi-card:hover{border-color:rgba(99,102,241,.3)}
 .kpi-val{font-family:'JetBrains Mono',monospace;font-size:1.7rem;font-weight:600;line-height:1.1;display:block;margin-bottom:.3rem}
-.kpi-lbl{font-family:'Inter',sans-serif;font-size:.72rem;color:#4a4a6a;font-weight:300}
+.kpi-lbl{font-family:'Inter',sans-serif;font-size:.72rem;color:#7a7a9a;font-weight:300}
 .domain-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:1rem 0}
 .domain-card{background:#0b0b16;border:1px solid #13132a;border-radius:8px;padding:1rem 1.1rem;transition:border-color .2s,background .2s}
 .domain-card:hover{background:#0e0e1c;border-color:rgba(99,102,241,.25)}
 .domain-icon{font-size:1.3rem;margin-bottom:.4rem;display:block}
 .domain-name{font-family:'Space Grotesk',sans-serif;font-size:.82rem;font-weight:600;color:#c4c4e0;margin-bottom:.2rem}
-.domain-desc{font-family:'Inter',sans-serif;font-size:.7rem;color:#4a4a6a;font-weight:300;line-height:1.45}
+.domain-desc{font-family:'Inter',sans-serif;font-size:.7rem;color:#7a7a9a;font-weight:300;line-height:1.45}
 .authors-bar{display:flex;align-items:center;gap:1.5rem;padding:1rem 1.4rem;background:#0b0b16;border:1px solid #13132a;border-radius:8px;margin-top:2rem;flex-wrap:wrap}
-.authors-label{font-family:'JetBrains Mono',monospace;font-size:.58rem;color:#3a3a5c;letter-spacing:2px;text-transform:uppercase;flex-shrink:0}
+.authors-label{font-family:'JetBrains Mono',monospace;font-size:.58rem;color:#6a6a8c;letter-spacing:2px;text-transform:uppercase;flex-shrink:0}
 .author-chip{display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:.7rem;color:#a5b4fc}
 .author-chip::before{content:'';display:inline-block;width:5px;height:5px;border-radius:50%;background:#6366f1}
 .links-row{display:flex;gap:10px;margin-left:auto;flex-wrap:wrap}
-.ext-link{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:5px;border:1px solid #1a1a2e;font-family:'JetBrains Mono',monospace;font-size:.62rem;color:#6b6b8a;text-decoration:none;transition:border-color .15s,color .15s}
+.ext-link{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:5px;border:1px solid #1a1a2e;font-family:'JetBrains Mono',monospace;font-size:.62rem;color:#9b9bba;text-decoration:none;transition:border-color .15s,color .15s}
 .ext-link:hover{border-color:rgba(99,102,241,.4);color:#a5b4fc}
-.batch-info{background:rgba(96,165,250,.04);border:1px solid rgba(96,165,250,.18);border-left:3px solid #60a5fa;border-radius:8px;padding:.85rem 1.2rem;margin-bottom:1rem;font-family:'Inter',sans-serif;font-size:.8rem;color:#6b6b8a;line-height:1.55}
+.batch-info{background:rgba(96,165,250,.04);border:1px solid rgba(96,165,250,.18);border-left:3px solid #60a5fa;border-radius:8px;padding:.85rem 1.2rem;margin-bottom:1rem;font-family:'Inter',sans-serif;font-size:.8rem;color:#9b9bba;line-height:1.55}
 .batch-info strong{color:#60a5fa;font-weight:500}
 .drift-row{display:flex;align-items:center;gap:10px;padding:.3rem 0;border-bottom:1px solid rgba(255,255,255,.03);font-family:'JetBrains Mono',monospace;font-size:.68rem}
 .drift-row:last-child{border-bottom:none}
@@ -305,11 +315,11 @@ def badge(col_type):
 def render_complexity(cplx):
     c = cplx.get("complexity", "unknown")
     cls_m  = {"linear":"cplx-linear","nonlinear":"cplx-nonlinear","mixed":"cplx-mixed","unknown":"cplx-unknown"}
-    col_m  = {"linear":"#60a5fa","nonlinear":"#fbbf24","mixed":"#34d399","unknown":"#4a4a6a"}
+    col_m  = {"linear":"#60a5fa","nonlinear":"#fbbf24","mixed":"#34d399","unknown":"#7a7a9a"}
     icon_m = {"linear":"◈","nonlinear":"◉","mixed":"◫","unknown":"◌"}
     st.markdown(
         f'<div class="cplx-panel {cls_m.get(c,"cplx-unknown")}">'
-        f'<div class="cplx-title" style="color:{col_m.get(c,"#4a4a6a")}">'
+        f'<div class="cplx-title" style="color:{col_m.get(c,"#7a7a9a")}">'
         f'{icon_m.get(c,"◌")} {c.upper()} COMPLEXITY</div>'
         f'<div class="cplx-note">{cplx.get("note","")}</div>'
         f'<span class="chip">LR {cplx.get("lr_score","—")}</span>'
@@ -328,7 +338,7 @@ def render_col_table(profile):
     for col, stats in col_stats.items():
         ctype = stats.get("type", "numeric")
         miss  = stats.get("missing_pct", 0)
-        mc    = "#f87171" if miss > 20 else "#4a4a6a" if miss > 0 else "#2a2a4a"
+        mc    = "#f87171" if miss > 20 else "#7a7a9a" if miss > 0 else "#2a2a4a"
         if ctype == "numeric":
             detail = (
                 f"mu={stats.get('mean','--')}  σ={stats.get('std','--')}  "
@@ -423,11 +433,11 @@ def apply_plot_style(fig, ax_or_axes):
     axes = ax_or_axes if isinstance(ax_or_axes, (list, np.ndarray)) else [ax_or_axes]
     for ax in np.array(axes).flatten():
         ax.set_facecolor("#0e0e1a")
-        ax.tick_params(colors="#3a3a5c", labelsize=8)
+        ax.tick_params(colors="#6a6a8c", labelsize=8)
         for spine in ax.spines.values():
             spine.set_edgecolor("#1a1a2e")
-        ax.xaxis.label.set_color("#4a4a6a")
-        ax.yaxis.label.set_color("#4a4a6a")
+        ax.xaxis.label.set_color("#7a7a9a")
+        ax.yaxis.label.set_color("#7a7a9a")
         ax.title.set_color("#8888aa")
 
 
@@ -436,7 +446,7 @@ def _no_model_msg():
         '<div class="info-panel-warn" style="margin-top:1rem">'
         f'<span style="{JM};font-size:.8rem;color:#fbbf24">'
         "△ No model trained in this session.<br>"
-        '<span style="font-size:.72rem;color:#6b6b8a">Go to '
+        '<span style="font-size:.72rem;color:#9b9bba">Go to '
         '<strong style="color:#a5b4fc">03 — Train</strong> and run training first.</span>'
         "</span></div>",
         unsafe_allow_html=True,
@@ -450,7 +460,7 @@ with st.sidebar:
         '<div class="brand-logo">&#x2B21;</div>'
         '<div><span class="brand-name">AutoML-X</span>'
         '<span class="brand-ver">v7.3</span></div></div>'
-        '<div style="font-family:\'Inter\',sans-serif;font-size:.75rem;color:#4a4a6a;'
+        '<div style="font-family:\'Inter\',sans-serif;font-size:.75rem;color:#7a7a9a;'
         'margin-bottom:1rem;font-weight:300">Universal Binary Classifier</div>',
         unsafe_allow_html=True,
     )
@@ -620,7 +630,7 @@ elif page == "01 -- Upload":
         )
         st.markdown(
             f'<div class="info-panel"><b style="color:#d4d4e8">{uploaded.name}</b>'
-            f' &nbsp;·&nbsp; <span style="{JM};font-size:.68rem;color:#4a4a6a">'
+            f' &nbsp;·&nbsp; <span style="{JM};font-size:.68rem;color:#7a7a9a">'
             f"{file_mb:.1f} MB &nbsp;·&nbsp; {_tag}</span></div>",
             unsafe_allow_html=True,
         )
@@ -671,14 +681,14 @@ elif page == "01 -- Upload":
                     f'justify-content:space-between;flex-wrap:wrap;gap:1rem">'
                     f'<div><div style="font-family:\'Space Grotesk\',sans-serif;font-weight:700;'
                     f'font-size:1.1rem;color:#34d399">✓ Dataset Loaded</div>'
-                    f'<div style="{JM};font-size:.7rem;color:#4a4a6a;margin-top:3px">{uploaded.name}</div></div>'
+                    f'<div style="{JM};font-size:.7rem;color:#7a7a9a;margin-top:3px">{uploaded.name}</div></div>'
                     f'<div style="display:flex;gap:2rem">'
                     f'<div style="text-align:center"><div style="{JM};font-size:1.4rem;color:#a5b4fc">{len(df):,}</div>'
-                    f'<div style="{JM};font-size:.58rem;color:#3a3a5c;letter-spacing:2px">ROWS</div></div>'
+                    f'<div style="{JM};font-size:.58rem;color:#6a6a8c;letter-spacing:2px">ROWS</div></div>'
                     f'<div style="text-align:center"><div style="{JM};font-size:1.4rem;color:#a5b4fc">{df.shape[1]}</div>'
-                    f'<div style="{JM};font-size:.58rem;color:#3a3a5c;letter-spacing:2px">COLS</div></div>'
+                    f'<div style="{JM};font-size:.58rem;color:#6a6a8c;letter-spacing:2px">COLS</div></div>'
                     f'<div style="text-align:center"><div style="{JM};font-size:1.4rem;color:{color}">{name}</div>'
-                    f'<div style="{JM};font-size:.58rem;color:#3a3a5c;letter-spacing:2px">TIER</div></div>'
+                    f'<div style="{JM};font-size:.58rem;color:#6a6a8c;letter-spacing:2px">TIER</div></div>'
                     f"</div></div>",
                     unsafe_allow_html=True,
                 )
@@ -710,7 +720,7 @@ elif page == "01 -- Upload":
         if not ram["is_safe"]:
             st.warning(f"⚠️ {ram['warning']}")
         st.markdown(
-            f'<div style="{JM};font-size:.65rem;color:#3a3a5c;text-align:right;margin-top:.3rem">'
+            f'<div style="{JM};font-size:.65rem;color:#6a6a8c;text-align:right;margin-top:.3rem">'
             f"RAM: {ram['dataframe_gb']:.3f} GB used · {ram['available_gb']:.1f} GB free</div>",
             unsafe_allow_html=True,
         )
@@ -803,7 +813,7 @@ elif page == "02 -- Analyze":
                     f'<div class="info-panel-warn" style="margin-top:.5rem">'
                     f'<span style="{JM};font-size:.72rem;color:#fbbf24">'
                     f'△ Imbalanced — minority {profile["minority_ratio"]*100:.1f}%<br>'
-                    f'<span style="color:#6b6b8a">class_weight=\'balanced\' applied</span>'
+                    f'<span style="color:#9b9bba">class_weight=\'balanced\' applied</span>'
                     f"</span></div>",
                     unsafe_allow_html=True,
                 )
@@ -828,7 +838,7 @@ elif page == "02 -- Analyze":
                         bar.get_x() + bar.get_width() / 2,
                         bar.get_height() + max(values) * 0.01,
                         f"{val:,}", ha="center", va="bottom",
-                        color="#6b6b8a", fontsize=8, fontfamily="monospace",
+                        color="#9b9bba", fontsize=8, fontfamily="monospace",
                     )
                 ax.set_title("Class Distribution", fontsize=9)
                 apply_plot_style(fig, ax)
@@ -916,7 +926,7 @@ elif page == "03 -- Train":
     }
     st.markdown(
         f'<div class="info-panel" style="margin:.5rem 0 1.2rem">'
-        f'<span style="{JM};font-size:.62rem;color:#3a3a5c;letter-spacing:1px">AUTO STRATEGY</span>'
+        f'<span style="{JM};font-size:.62rem;color:#6a6a8c;letter-spacing:1px">AUTO STRATEGY</span>'
         f'<div style="{JM};font-size:.78rem;color:#a5b4fc;margin-top:4px">{strategies[tier]}</div></div>',
         unsafe_allow_html=True,
     )
@@ -996,7 +1006,7 @@ elif page == "03 -- Train":
                 with st.expander(f"Data Cleaning Report — {len(cr['changes'])} actions"):
                     for ch in cr["changes"]:
                         st.markdown(
-                            f'<div style="{JM};font-size:.72rem;color:#6b6b8a;padding:2px 0">✓ {ch}</div>',
+                            f'<div style="{JM};font-size:.72rem;color:#9b9bba;padding:2px 0">✓ {ch}</div>',
                             unsafe_allow_html=True,
                         )
 
@@ -1007,7 +1017,7 @@ elif page == "03 -- Train":
                     f'<div class="info-panel-warn" style="margin-top:.6rem;padding:.7rem 1rem">'
                     f'<span style="{JM};font-size:.72rem;color:#fbbf24">△ Dropped {len(dropped)} col(s): '
                     + " ".join(f'<span style="color:#a5b4fc;background:rgba(99,102,241,.08);padding:1px 5px;border-radius:3px">{c}</span>' for c in dropped[:8])
-                    + (f' <span style="color:#6b6b8a">+ {len(dropped)-8} more</span>' if len(dropped) > 8 else "")
+                    + (f' <span style="color:#9b9bba">+ {len(dropped)-8} more</span>' if len(dropped) > 8 else "")
                     + "</span></div>",
                     unsafe_allow_html=True,
                 )
@@ -1043,12 +1053,12 @@ elif page == "04 -- Results":
 
     st.markdown(
         f'<div class="info-panel" style="display:flex;gap:2rem;flex-wrap:wrap">'
-        f'<div><span style="{JM};font-size:.6rem;color:#3a3a5c;text-transform:uppercase;letter-spacing:1.5px">Model</span>'
+        f'<div><span style="{JM};font-size:.6rem;color:#6a6a8c;text-transform:uppercase;letter-spacing:1.5px">Model</span>'
         f'<div style="{JM};font-size:.85rem;color:#a5b4fc;margin-top:3px">{trainer.best_model_name}</div></div>'
-        f'<div><span style="{JM};font-size:.6rem;color:#3a3a5c;text-transform:uppercase;letter-spacing:1.5px">Required features</span>'
+        f'<div><span style="{JM};font-size:.6rem;color:#6a6a8c;text-transform:uppercase;letter-spacing:1.5px">Required features</span>'
         f'<div style="{JM};font-size:.85rem;color:#a5b4fc;margin-top:3px">{len(trainer.feature_names)}</div></div>'
-        f'<div><span style="{JM};font-size:.6rem;color:#3a3a5c;text-transform:uppercase;letter-spacing:1.5px">Drift detector</span>'
-        f'<div style="{JM};font-size:.85rem;color:{"#34d399" if drift_ready else "#4a4a6a"};margin-top:3px">'
+        f'<div><span style="{JM};font-size:.6rem;color:#6a6a8c;text-transform:uppercase;letter-spacing:1.5px">Drift detector</span>'
+        f'<div style="{JM};font-size:.85rem;color:{"#34d399" if drift_ready else "#7a7a9a"};margin-top:3px">'
         f'{"Ready" if drift_ready else "Not initialized"}</div></div>'
         f"</div>",
         unsafe_allow_html=True,
@@ -1126,7 +1136,7 @@ elif page == "04 -- Results":
                             f'<div class="info-panel-warn" style="margin-bottom:.8rem">'
                             f'<span style="{JM};font-size:.76rem;color:#fbbf24;font-weight:600">'
                             f'⚠ All predicted probabilities are near zero (std = {_prob_std:.5f})<br>'
-                            f'<span style="color:#6b6b8a;font-weight:400">This usually means the batch data is from a '
+                            f'<span style="color:#9b9bba;font-weight:400">This usually means the batch data is from a '
                             f'<strong style="color:#a5b4fc">different domain</strong> than the training data. '
                             f'Check the drift report below to confirm. '
                             f'Retrain on data from this domain for valid predictions.</span></span></div>',
@@ -1202,7 +1212,7 @@ elif page == "04 -- Results":
                                 f'<div style="background:{ds_bg};border:1px solid {ds_color}30;'
                                 f'border-left:3px solid {ds_color};border-radius:8px;padding:.9rem 1.2rem;margin-bottom:1rem">'
                                 f'<div style="{JM};font-size:.75rem;color:{ds_color};font-weight:600">{dstatus}</div>'
-                                f'<div style="{JM};font-size:.68rem;color:#4a4a6a;margin-top:.3rem">'
+                                f'<div style="{JM};font-size:.68rem;color:#7a7a9a;margin-top:.3rem">'
                                 f"{dcount} / {dtotal} features drifted &nbsp;·&nbsp; ratio {dratio:.1%}</div></div>",
                                 unsafe_allow_html=True,
                             )
@@ -1217,13 +1227,13 @@ elif page == "04 -- Results":
                                 st.markdown(
                                     f'<div style="background:#0e0e1a;border:1px solid #1a1a2e;border-radius:8px;'
                                     f'padding:.6rem 1rem;margin:.5rem 0;{JM};font-size:.63rem">'
-                                    f'<span style="color:#3a3a5c;letter-spacing:1.5px;text-transform:uppercase">PSI SCALE &nbsp;·&nbsp; </span>'
+                                    f'<span style="color:#6a6a8c;letter-spacing:1.5px;text-transform:uppercase">PSI SCALE &nbsp;·&nbsp; </span>'
                                     f'<span style="color:#34d399">&lt; 0.1 stable</span>'
-                                    f'<span style="color:#3a3a5c"> &nbsp;·&nbsp; </span>'
+                                    f'<span style="color:#6a6a8c"> &nbsp;·&nbsp; </span>'
                                     f'<span style="color:#fbbf24">0.1 – 0.2 warning</span>'
-                                    f'<span style="color:#3a3a5c"> &nbsp;·&nbsp; </span>'
+                                    f'<span style="color:#6a6a8c"> &nbsp;·&nbsp; </span>'
                                     f'<span style="color:#f87171">&gt; 0.2 high drift</span>'
-                                    f'<span style="color:#3a3a5c"> &nbsp;(PSI = 26 means completely different distribution)</span>'
+                                    f'<span style="color:#6a6a8c"> &nbsp;(PSI = 26 means completely different distribution)</span>'
                                     f'</div>',
                                     unsafe_allow_html=True,
                                 )
@@ -1243,7 +1253,7 @@ elif page == "04 -- Results":
                                         f'<div class="drift-row">'
                                         f'<div style="flex:0 0 180px;color:#8888aa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{feat}">{feat}</div>'
                                         f'<div style="flex:0 0 80px;color:{psi_color}">PSI {d["psi"]:.4f}</div>'
-                                        f'<div style="flex:0 0 80px;color:#4a4a6a">p={d["pvalue"]:.3f}</div>'
+                                        f'<div style="flex:0 0 80px;color:#7a7a9a">p={d["pvalue"]:.3f}</div>'
                                         f'<div style="flex:1;color:{psi_color}">{d["status"]}</div>'
                                         f"</div>"
                                     )
@@ -1263,7 +1273,7 @@ elif page == "04 -- Results":
                     elif _DRIFT and not drift_ready:
                         st.markdown(
                             f'<div class="info-panel" style="margin-top:.5rem">'
-                            f'<span style="{JM};font-size:.7rem;color:#3a3a5c">'
+                            f'<span style="{JM};font-size:.7rem;color:#6a6a8c">'
                             "△ Drift detector not initialized — train a model first to enable drift comparison."
                             "</span></div>",
                             unsafe_allow_html=True,
@@ -1335,7 +1345,7 @@ elif page == "04 -- Results":
                                   color=colors, height=0.45, edgecolor="none")
                 for bar, val in zip(bars, ms["CV ROC-AUC"]):
                     ax.text(val + 0.001, bar.get_y() + bar.get_height() / 2,
-                            f"{val:.4f}", va="center", color="#6b6b8a",
+                            f"{val:.4f}", va="center", color="#9b9bba",
                             fontsize=8, fontfamily="monospace")
                 ax.set_xlim(max(0, ms["CV ROC-AUC"].min() - 0.05), 1.02)
                 ax.set_xlabel("CV ROC-AUC", fontsize=8)
@@ -1432,7 +1442,7 @@ elif page == "04 -- Results":
                 ax.set_xticks([0,1]); ax.set_yticks([0,1])
                    # FIX #11: domain-specific labels
                 ax.set_xticklabels(["Pred Legit","Pred Fraud"], fontsize=8, color="#6a6aef")
-                ax.set_yticklabels(["Actual Legit","Actual Fraud"], fontsize=8, color="#6b6b8a")
+                ax.set_yticklabels(["Actual Legit","Actual Fraud"], fontsize=8, color="#9b9bba")
 
                 ax.set_title("Confusion Matrix", fontsize=9)
                 apply_plot_style(fig, ax)
@@ -1447,7 +1457,7 @@ elif page == "04 -- Results":
     with st.expander("⚙ Compare F1 / Recall / Precision strategies"):
         st.markdown(
             f'<div class="info-panel" style="margin-bottom:.8rem">'
-            f'<span style="{JM};font-size:.72rem;color:#6b6b8a">'
+            f'<span style="{JM};font-size:.72rem;color:#9b9bba">'
             f'Pick your objective. <span style="color:#a5b4fc">Maximize F1</span> balances precision and recall. '
             f'<span style="color:#34d399">Maximize Recall</span> catches more positives (better for fraud). '
             f'<span style="color:#fbbf24">Maximize Precision</span> reduces false alarms.</span></div>',
@@ -1519,7 +1529,7 @@ elif page == "04 -- Results":
             f'<div class="info-panel" style="margin-bottom:.8rem">'
             f'<span style="{JM};font-size:.75rem;color:#fbbf24;font-weight:600">'
             f'Business Cost Optimizer</span>'
-            f'<div style="font-family:\'Inter\',sans-serif;font-size:.75rem;color:#4a4a6a;margin-top:.4rem">'
+            f'<div style="font-family:\'Inter\',sans-serif;font-size:.75rem;color:#7a7a9a;margin-top:.4rem">'
             f'Find the threshold that minimises total financial cost. '
             f'Powered by <code>src/cost_optimizer.BusinessCostOptimizer</code>.</div></div>',
             unsafe_allow_html=True,
@@ -1542,9 +1552,9 @@ elif page == "04 -- Results":
             ratio_color = "#f87171" if ratio > 20 else "#fbbf24" if ratio > 5 else "#34d399"
             st.markdown(
                 f'<div class="info-panel" style="margin-top:1.6rem">'
-                f'<span style="{JM};font-size:.68rem;color:#4a4a6a">'
+                f'<span style="{JM};font-size:.68rem;color:#7a7a9a">'
                 f'FN:FP ratio = <span style="color:{ratio_color};font-size:.85rem;font-weight:600">{ratio:.1f}x</span><br>'
-                f'<span style="color:#3a3a5c">Higher ratio → lower threshold → catches more positives</span>'
+                f'<span style="color:#6a6a8c">Higher ratio → lower threshold → catches more positives</span>'
                 f"</span></div>",
                 unsafe_allow_html=True,
             )
@@ -1578,10 +1588,10 @@ elif page == "04 -- Results":
                         f'<div class="info-panel-success" style="margin-top:.8rem">'
                         f'<span style="{JM};font-size:.82rem;color:#34d399;font-weight:600">'
                         f'✓ Optimal threshold: {opt_thr:.4f}</span><br>'
-                        f'<span style="{JM};font-size:.7rem;color:#6b6b8a">'
+                        f'<span style="{JM};font-size:.7rem;color:#9b9bba">'
                         f'Minimum total cost: {results["Minimum Cost ($)"]:,.0f} &nbsp;·&nbsp; '
                         f'Current threshold: {trainer.threshold:.4f}</span><br>'
-                        f'<span style="{JM};font-size:.7rem;color:#6b6b8a">'
+                        f'<span style="{JM};font-size:.7rem;color:#9b9bba">'
                         f'Recall: {bm.get("Fraud Caught (Recall)",0):.3f} &nbsp;·&nbsp; '
                         f'Precision: {bm.get("Precision",0):.3f} &nbsp;·&nbsp; '
                         f'TP:{bm.get("TP",0):,} FP:{bm.get("FP",0):,} FN:{bm.get("FN",0):,}'
@@ -1632,13 +1642,13 @@ elif page == "04 -- Results":
     sec("Training Info")
     st.markdown(
         f'<div class="info-panel"><div class="stat-row stat-row-4">'
-        f'<div><div style="{JM};font-size:.6rem;color:#3a3a5c;text-transform:uppercase;letter-spacing:1.5px">Strategy</div>'
+        f'<div><div style="{JM};font-size:.6rem;color:#6a6a8c;text-transform:uppercase;letter-spacing:1.5px">Strategy</div>'
         f'<div style="{JM};font-size:.75rem;color:#a5b4fc;margin-top:4px">{m.get("tier_strategy","--")}</div></div>'
-        f'<div><div style="{JM};font-size:.6rem;color:#3a3a5c;text-transform:uppercase;letter-spacing:1.5px">Train rows</div>'
+        f'<div><div style="{JM};font-size:.6rem;color:#6a6a8c;text-transform:uppercase;letter-spacing:1.5px">Train rows</div>'
         f'<div style="{JM};font-size:.75rem;color:#a5b4fc;margin-top:4px">{m.get("n_train",0):,}</div></div>'
-        f'<div><div style="{JM};font-size:.6rem;color:#3a3a5c;text-transform:uppercase;letter-spacing:1.5px">Val rows</div>'
+        f'<div><div style="{JM};font-size:.6rem;color:#6a6a8c;text-transform:uppercase;letter-spacing:1.5px">Val rows</div>'
         f'<div style="{JM};font-size:.75rem;color:#a5b4fc;margin-top:4px">{m.get("n_val",0):,}</div></div>'
-        f'<div><div style="{JM};font-size:.6rem;color:#3a3a5c;text-transform:uppercase;letter-spacing:1.5px">Total rows</div>'
+        f'<div><div style="{JM};font-size:.6rem;color:#6a6a8c;text-transform:uppercase;letter-spacing:1.5px">Total rows</div>'
         f'<div style="{JM};font-size:.75rem;color:#a5b4fc;margin-top:4px">{m.get("n_rows_total",0):,}</div></div>'
         f"</div></div>",
         unsafe_allow_html=True,
@@ -1649,7 +1659,7 @@ elif page == "04 -- Results":
         with st.expander(f"Data Cleaning Report — {len(cr['changes'])} action(s)"):
             for ch in cr["changes"]:
                 st.markdown(
-                    f'<div style="{JM};font-size:.72rem;color:#6b6b8a;padding:2px 0">✓ {ch}</div>',
+                    f'<div style="{JM};font-size:.72rem;color:#9b9bba;padding:2px 0">✓ {ch}</div>',
                     unsafe_allow_html=True,
                 )
 
@@ -1664,7 +1674,7 @@ elif page == "04 -- Results":
         df_ref = st.session_state.get("df")
         if df_ref is None:
             st.markdown(
-                f'<div class="info-panel"><span style="color:#4a4a6a">'
+                f'<div class="info-panel"><span style="color:#7a7a9a">'
                 "Re-upload dataset to generate SHAP explanations</span></div>",
                 unsafe_allow_html=True,
             )
@@ -1721,7 +1731,7 @@ elif page == "04 -- Results":
 
                 st.markdown(
                     f'<div class="info-panel" style="margin-top:.8rem">'
-                    f'<span style="{JM};font-size:.65rem;color:#4a4a6a">'
+                    f'<span style="{JM};font-size:.65rem;color:#7a7a9a">'
                     f'<span style="color:#f87171">Red</span> = increases fraud probability · '
                     f'<span style="color:#34d399">Green</span> = decreases fraud probability · '
                     f'Base: <span style="color:#a5b4fc">{shap_result.get("base_value",0):.4f}</span>'
@@ -1777,11 +1787,11 @@ elif page == "05 -- Predict":
 
     st.markdown(
         f'<div class="info-panel" style="display:flex;gap:2rem;flex-wrap:wrap">'
-        f'<div><span style="{JM};font-size:.6rem;color:#3a3a5c;text-transform:uppercase;letter-spacing:1.5px">Model</span>'
+        f'<div><span style="{JM};font-size:.6rem;color:#6a6a8c;text-transform:uppercase;letter-spacing:1.5px">Model</span>'
         f'<div style="{JM};font-size:.85rem;color:#a5b4fc;margin-top:3px">{trainer.best_model_name}</div></div>'
-        f'<div><span style="{JM};font-size:.6rem;color:#3a3a5c;text-transform:uppercase;letter-spacing:1.5px">Features</span>'
+        f'<div><span style="{JM};font-size:.6rem;color:#6a6a8c;text-transform:uppercase;letter-spacing:1.5px">Features</span>'
         f'<div style="{JM};font-size:.85rem;color:#a5b4fc;margin-top:3px">{len(features)}</div></div>'
-        f'<div><span style="{JM};font-size:.6rem;color:#3a3a5c;text-transform:uppercase;letter-spacing:1.5px">Threshold</span>'
+        f'<div><span style="{JM};font-size:.6rem;color:#6a6a8c;text-transform:uppercase;letter-spacing:1.5px">Threshold</span>'
         f'<div style="{JM};font-size:.85rem;color:#a5b4fc;margin-top:3px">{trainer.threshold:.5f}</div></div>'
         f"</div>",
         unsafe_allow_html=True,
@@ -1790,7 +1800,7 @@ elif page == "05 -- Predict":
     sec("Feature Inputs")
     st.markdown(
         f'<div class="info-panel" style="margin-bottom:.8rem;padding:.7rem 1rem">'
-        f'<span style="{JM};font-size:.62rem;color:#3a3a5c">'
+        f'<span style="{JM};font-size:.62rem;color:#6a6a8c">'
         f'TIPS · <span style="color:#5a5a80">Defaults are median values from your training data.</span></span></div>',
         unsafe_allow_html=True,
     )
@@ -1940,12 +1950,12 @@ elif page == "06 -- Batch":
 
     st.markdown(
         f'<div class="info-panel" style="display:flex;gap:2rem;flex-wrap:wrap">'
-        f'<div><span style="{JM};font-size:.6rem;color:#3a3a5c;text-transform:uppercase;letter-spacing:1.5px">Model</span>'
+        f'<div><span style="{JM};font-size:.6rem;color:#6a6a8c;text-transform:uppercase;letter-spacing:1.5px">Model</span>'
         f'<div style="{JM};font-size:.85rem;color:#a5b4fc;margin-top:3px">{trainer.best_model_name}</div></div>'
-        f'<div><span style="{JM};font-size:.6rem;color:#3a3a5c;text-transform:uppercase;letter-spacing:1.5px">Required features</span>'
+        f'<div><span style="{JM};font-size:.6rem;color:#6a6a8c;text-transform:uppercase;letter-spacing:1.5px">Required features</span>'
         f'<div style="{JM};font-size:.85rem;color:#a5b4fc;margin-top:3px">{len(trainer.feature_names)}</div></div>'
-        f'<div><span style="{JM};font-size:.6rem;color:#3a3a5c;text-transform:uppercase;letter-spacing:1.5px">Drift detector</span>'
-        f'<div style="{JM};font-size:.85rem;color:{"#34d399" if drift_ready else "#4a4a6a"};margin-top:3px">'
+        f'<div><span style="{JM};font-size:.6rem;color:#6a6a8c;text-transform:uppercase;letter-spacing:1.5px">Drift detector</span>'
+        f'<div style="{JM};font-size:.85rem;color:{"#34d399" if drift_ready else "#7a7a9a"};margin-top:3px">'
         f'{"Ready" if drift_ready else "Not initialized"}</div></div>'
         f"</div>",
         unsafe_allow_html=True,
@@ -2021,7 +2031,7 @@ elif page == "06 -- Batch":
                             f'<div class="info-panel-warn" style="margin-bottom:.8rem">'
                             f'<span style="{JM};font-size:.76rem;color:#fbbf24;font-weight:600">'
                             f'⚠ All predicted probabilities are near zero (std = {_prob_std:.5f})<br>'
-                            f'<span style="color:#6b6b8a;font-weight:400">This usually means the batch data is from a <strong style="color:#a5b4fc">different domain</strong> than the training data — '
+                            f'<span style="color:#9b9bba;font-weight:400">This usually means the batch data is from a <strong style="color:#a5b4fc">different domain</strong> than the training data — '
                             f'e.g. scoring churn data against a fraud model. The drift report below will confirm. '
                             f'Retrain on data from this domain for valid predictions.</span></span></div>',
                             unsafe_allow_html=True,
@@ -2100,7 +2110,7 @@ elif page == "06 -- Batch":
                                 f'<div style="background:{ds_bg};border:1px solid {ds_color}30;'
                                 f'border-left:3px solid {ds_color};border-radius:8px;padding:.9rem 1.2rem;margin-bottom:1rem">'
                                 f'<div style="{JM};font-size:.75rem;color:{ds_color};font-weight:600">{dstatus}</div>'
-                                f'<div style="{JM};font-size:.68rem;color:#4a4a6a;margin-top:.3rem">'
+                                f'<div style="{JM};font-size:.68rem;color:#7a7a9a;margin-top:.3rem">'
                                 f"{dcount} / {dtotal} features drifted &nbsp;·&nbsp; ratio {dratio:.1%}</div></div>",
                                 unsafe_allow_html=True,
                             )
@@ -2114,13 +2124,13 @@ elif page == "06 -- Batch":
                                 st.markdown(
                                     f'<div style="background:#0e0e1a;border:1px solid #1a1a2e;border-radius:8px;'
                                     f'padding:.6rem 1rem;margin:.5rem 0;{JM};font-size:.63rem">'
-                                    f'<span style="color:#3a3a5c;letter-spacing:1.5px;text-transform:uppercase">PSI SCALE &nbsp;·&nbsp; </span>'
+                                    f'<span style="color:#6a6a8c;letter-spacing:1.5px;text-transform:uppercase">PSI SCALE &nbsp;·&nbsp; </span>'
                                     f'<span style="color:#34d399">&lt; 0.1 stable</span>'
-                                    f'<span style="color:#3a3a5c"> &nbsp;·&nbsp; </span>'
+                                    f'<span style="color:#6a6a8c"> &nbsp;·&nbsp; </span>'
                                     f'<span style="color:#fbbf24">0.1 – 0.2 warning</span>'
-                                    f'<span style="color:#3a3a5c"> &nbsp;·&nbsp; </span>'
+                                    f'<span style="color:#6a6a8c"> &nbsp;·&nbsp; </span>'
                                     f'<span style="color:#f87171">&gt; 0.2 high drift</span>'
-                                    f'<span style="color:#3a3a5c"> &nbsp;(PSI = 26 means completely different distribution)</span>'
+                                    f'<span style="color:#6a6a8c"> &nbsp;(PSI = 26 means completely different distribution)</span>'
                                     f'</div>',
                                     unsafe_allow_html=True,
                                 )
@@ -2139,7 +2149,7 @@ elif page == "06 -- Batch":
                                         f'<div class="drift-row">'
                                         f'<div style="flex:0 0 180px;color:#8888aa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{feat}">{feat}</div>'
                                         f'<div style="flex:0 0 80px;color:{psi_color}">PSI {d["psi"]:.4f}</div>'
-                                        f'<div style="flex:0 0 80px;color:#4a4a6a">p={d["pvalue"]:.3f}</div>'
+                                        f'<div style="flex:0 0 80px;color:#7a7a9a">p={d["pvalue"]:.3f}</div>'
                                         f'<div style="flex:1;color:{psi_color}">{d["status"]}</div>'
                                         f"</div>"
                                     )
@@ -2159,7 +2169,7 @@ elif page == "06 -- Batch":
                     elif _DRIFT and not drift_ready:
                         st.markdown(
                             f'<div class="info-panel" style="margin-top:.5rem">'
-                            f'<span style="{JM};font-size:.7rem;color:#3a3a5c">'
+                            f'<span style="{JM};font-size:.7rem;color:#6a6a8c">'
                             "△ Drift detector not initialized — train a model first to enable drift comparison."
                             "</span></div>",
                             unsafe_allow_html=True,
