@@ -188,6 +188,7 @@ if page == "📁 Upload & Configure":
 
         # ── Profile dataset ───────────────────────────────────────────────────
         target_col = st.session_state.target_col
+        positive_label = st.session_state.get("positive_label", None)
         if st.button("🔍 Analyze Dataset", use_container_width=True):
             with st.spinner("Analyzing..."):
                 try:
