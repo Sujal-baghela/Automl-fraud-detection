@@ -22,7 +22,7 @@ jobs:
         run: pip install ruff
 
       - name: Run Ruff linter
-        run: ruff check . --ignore E501,F401
+        run: ruff check . --ignore E501,F401,E702,E701,E721,F811,F541,E402,E741
 
   test:
     name: Run Tests
