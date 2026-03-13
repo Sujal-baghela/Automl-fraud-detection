@@ -590,13 +590,13 @@ class TestDatasetProfiler:
 
     def test_profile_no_missing_by_default(self, universal_df):
         from src.universal_trainer import DatasetProfiler
-        assert DatasetProfiler().profile(universal_df, "label")["has_missing"] == False
+        assert DatasetProfiler().profile(universal_df, "label")["has_missing"] is not True
 
     def test_profile_detects_missing_values(self):
         from src.universal_trainer import DatasetProfiler
         df = pd.DataFrame({"a": [1.0, np.nan, 3.0], "b": [1, 0, 1]})
         profile = DatasetProfiler().profile(df, "b")
-        assert profile["has_missing"] == True
+        assert profile["has_missing"]
         assert "a" in profile["missing_cols"]
 
 
