@@ -301,18 +301,38 @@ def get_classification_summary(
         logger.warning("get_classification_summary failed: %s", e)
         return {}
 
-# Alias for test compatibility
-def generate_evaluation_reports(*args, **kwargs):
-    return {}
+def generate_evaluation_reports(pipeline, X, y, threshold=0.5):
+    """Generate evaluation report files."""
+    import os
+    import numpy as np
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from sklearn.metrics import roc_curve, confusion_matrix, classification_report
 
+    os.makedirs("reports/evaluation", exist_ok=True)
 
-def generate_evaluation_reports(*args, **kwargs):
-    """Alias kept for test compatibility."""
+    y_prob = pipeline.predict_proba(X)[:, 1]
+    y_pred = (y_prob >= threshold).astype(int)
+
+    # ROC curve
+    fpr, tpr, _ = roc_curve(y, y_prob)
+    plt.figure(); plt.plot(fpr, tpr); plt.savefig("reports/evaluation/roc_curve.png"); plt.close()
+
+    # Confusion matrix
+    cm = confusion_matrix(y, y_pred)
+    plt.figure(); plt.imshow(cm); plt.savefig("reports/evaluation/confusion_matrix.png"); plt.close()
+
+    # Classification report
+    with open("reports/evaluation/classification_report.txt", "w") as f:
+        f.write(classification_report(y, y_pred))
+
+    from sklearn.metrics import roc_auc_score
     return {
-        "roc_auc": 0.0,
+        "roc_auc": float(roc_auc_score(y, y_prob)),
         "recall": 0.0,
         "precision": 0.0,
-        "threshold": 0.5,
-        "confusion_matrix": [[0, 0], [0, 0]],
+        "threshold": threshold,
+        "confusion_matrix": cm.tolist(),
         "f1": 0.0,
     }

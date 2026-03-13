@@ -284,7 +284,7 @@ class TestUniversalTrainerLines:
                 "CrashModel": crash_model,
             }
 
-        with patch("src.universal_trainer.get_models", patched_get_models):
+        with patch("src.universal_trainer.get_models_for_tier", lambda tier, is_imbalanced, complexity: patched_get_models(is_imbalanced, 1000)):
             metrics = trainer.fit(df, target_col="label")
 
         assert metrics["best_model"] is not None
