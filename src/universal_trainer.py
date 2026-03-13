@@ -832,6 +832,7 @@ class DatasetProfiler:
             "is_imbalanced":     minority_ratio < 0.2,
             "missing_pct":       missing_pct,
             "missing_cols":      [c for c in df.columns if df[c].isnull().any()],
+            "has_missing":       missing_pct > 0,
             "high_corr_pairs":   high_corr_pairs,
             "col_stats":         col_stats,
             "size_gb":           round(get_dataframe_ram_gb(df), 3),
@@ -1252,12 +1253,12 @@ class UniversalTrainer:
         self.tier             = pkg.get("tier")
         self.cleaning_report  = pkg.get("cleaning_report", {})
         return self
-def get_models(n_rows=1000, balanced=False):
+def get_models(n_rows=1000, balanced=False, is_imbalanced=False):
     from sklearn.linear_model import LogisticRegression
     from sklearn.ensemble import RandomForestClassifier
     import lightgbm as lgb
     import xgboost as xgb
-    cw = "balanced" if balanced else None
+    cw = "balanced" if (balanced or is_imbalanced) else None
     n = 50 if n_rows > 100_000 else 100
     return {
         "LogisticRegression": LogisticRegression(max_iter=1000, class_weight=cw),
@@ -1265,7 +1266,7 @@ def get_models(n_rows=1000, balanced=False):
         "LightGBM": lgb.LGBMClassifier(n_estimators=n, class_weight=cw, verbose=-1),
         "XGBoost": xgb.XGBClassifier(n_estimators=n, eval_metric="logloss"),
     }
-def _maybe_sample(self, X, y, max_rows=500_000):
+    def _maybe_sample(self, X, y, max_rows=500_000):
         """Sample dataset if larger than max_rows."""
         import pandas as pd
         if len(X) <= max_rows:

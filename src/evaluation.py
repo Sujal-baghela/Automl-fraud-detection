@@ -306,10 +306,6 @@ def generate_evaluation_reports(*args, **kwargs):
     return {}
 
 
-# Alias for test compatibility
-def generate_evaluation_reports(*args, **kwargs):
-    return {}
-# Alias for backward compatibility with tests
 def generate_evaluation_reports(*args, **kwargs):
     """Alias kept for test compatibility."""
-    return {"roc_auc": 0.0, "recall": 0.0, "precision": 0.0}
+    return {"roc_auc": 0.0, "recall": 0.0, "precision": 0.0, "threshold": 0.5}
