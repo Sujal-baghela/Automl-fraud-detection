@@ -1253,23 +1253,22 @@ class UniversalTrainer:
         self.cleaning_report  = pkg.get("cleaning_report", {})
         return self
     def get_models(n_rows=1000, balanced=False):
-     """Return model candidates dict."""
-    from sklearn.linear_model import LogisticRegression
-    from sklearn.ensemble import RandomForestClassifier
-    import lightgbm as lgb
-    import xgboost as xgb
-    cw = "balanced" if balanced else None
-    n = 50 if n_rows > 100_000 else 100
-    return {
-        "LogisticRegression": LogisticRegression(max_iter=1000, class_weight=cw, n_jobs=-1),
-        "RandomForest": RandomForestClassifier(n_estimators=n, class_weight=cw, n_jobs=-1),
-        "LightGBM": lgb.LGBMClassifier(n_estimators=n, class_weight=cw, verbose=-1),
-        "XGBoost": xgb.XGBClassifier(n_estimators=n, eval_metric="logloss"),
-    }
+       from sklearn.linear_model import LogisticRegression
+       from sklearn.ensemble import RandomForestClassifier
+       import lightgbm as lgb
+       import xgboost as xgb
+       cw = "balanced" if balanced else None
+       n = 50 if n_rows > 100_000 else 100
+       return {
+          "LogisticRegression": LogisticRegression(max_iter=1000, class_weight=cw),
+          "RandomForest": RandomForestClassifier(n_estimators=n, class_weight=cw, n_jobs=-1),
+          "LightGBM": lgb.LGBMClassifier(n_estimators=n, class_weight=cw, verbose=-1),
+          "XGBoost": xgb.XGBClassifier(n_estimators=n, eval_metric="logloss"),
+      }
     def _maybe_sample(self, X, y, max_rows=500_000):
-       """Sample dataset if larger than max_rows."""
-       if len(X) <= max_rows:
-        return X, y
-       import pandas as pd
-       idx = pd.Series(range(len(X))).sample(max_rows, random_state=42).values
-       return X.iloc[idx].reset_index(drop=True), y.iloc[idx].reset_index(drop=True)
+        """Sample dataset if larger than max_rows."""
+        if len(X) <= max_rows:
+            return X, y
+        import pandas as pd
+        idx = pd.Series(range(len(X))).sample(max_rows, random_state=42).values
+        return X.iloc[idx].reset_index(drop=True), y.iloc[idx].reset_index(drop=True)
