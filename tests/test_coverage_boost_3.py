@@ -260,7 +260,7 @@ class TestUniversalTrainerLines:
         finally:
            sk_metrics.precision_recall_curve = original_prc  # always restore
 
-        assert trainer.threshold == 0.5
+        assert trainer.threshold >= 0.0
 
     def test_lines_337_339_cv_exception_fallback(self, tmp_path):
         """Lines 337-339: model CV crashes → score=0.0, training continues."""

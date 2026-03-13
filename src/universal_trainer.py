@@ -831,7 +831,7 @@ class DatasetProfiler:
             "minority_ratio":    round(float(minority_ratio), 6),
             "is_imbalanced":     minority_ratio < 0.2,
             "missing_pct":       missing_pct,
-            "has_missing":       missing_pct > 0,
+            "missing_cols":      [c for c in df.columns if df[c].isnull().any()],
             "high_corr_pairs":   high_corr_pairs,
             "col_stats":         col_stats,
             "size_gb":           round(get_dataframe_ram_gb(df), 3),
@@ -1252,23 +1252,25 @@ class UniversalTrainer:
         self.tier             = pkg.get("tier")
         self.cleaning_report  = pkg.get("cleaning_report", {})
         return self
-    def get_models(n_rows=1000, balanced=False):
-       from sklearn.linear_model import LogisticRegression
-       from sklearn.ensemble import RandomForestClassifier
-       import lightgbm as lgb
-       import xgboost as xgb
-       cw = "balanced" if balanced else None
-       n = 50 if n_rows > 100_000 else 100
-       return {
-          "LogisticRegression": LogisticRegression(max_iter=1000, class_weight=cw),
-          "RandomForest": RandomForestClassifier(n_estimators=n, class_weight=cw, n_jobs=-1),
-          "LightGBM": lgb.LGBMClassifier(n_estimators=n, class_weight=cw, verbose=-1),
-          "XGBoost": xgb.XGBClassifier(n_estimators=n, eval_metric="logloss"),
-      }
-    def _maybe_sample(self, X, y, max_rows=500_000):
+def get_models(n_rows=1000, balanced=False):
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.ensemble import RandomForestClassifier
+    import lightgbm as lgb
+    import xgboost as xgb
+    cw = "balanced" if balanced else None
+    n = 50 if n_rows > 100_000 else 100
+    return {
+        "LogisticRegression": LogisticRegression(max_iter=1000, class_weight=cw),
+        "RandomForest": RandomForestClassifier(n_estimators=n, class_weight=cw, n_jobs=-1),
+        "LightGBM": lgb.LGBMClassifier(n_estimators=n, class_weight=cw, verbose=-1),
+        "XGBoost": xgb.XGBClassifier(n_estimators=n, eval_metric="logloss"),
+    }
+def _maybe_sample(self, X, y, max_rows=500_000):
         """Sample dataset if larger than max_rows."""
+        import pandas as pd
         if len(X) <= max_rows:
             return X, y
-        import pandas as pd
         idx = pd.Series(range(len(X))).sample(max_rows, random_state=42).values
-        return X.iloc[idx].reset_index(drop=True), y.iloc[idx].reset_index(drop=True)
+        X_df = pd.DataFrame(X) if not hasattr(X, "iloc") else X
+        y_s = pd.Series(y) if not hasattr(y, "iloc") else y
+        return X_df.iloc[idx].reset_index(drop=True), y_s.iloc[idx].reset_index(drop=True)
